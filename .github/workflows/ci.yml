@@ -28,9 +28,6 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U postgres"
           --health-interval 5s --health-timeout 5s --health-retries 12
-    env:
-      TEST_POSTGRES_DSN: postgres://postgres:synthetic-ci-postgres-password@127.0.0.1:${{ job.services.postgres.ports[5432] }}/store_contract?sslmode=disable
-      TEST_CLIENT_KEYS_POSTGRES_DSN: postgres://postgres:synthetic-ci-postgres-password@127.0.0.1:${{ job.services.clientkeys.ports[5432] }}/client_key_contract?sslmode=disable
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
@@ -41,6 +38,9 @@ jobs:
           node-version: '22'
       - run: go vet ./...
       - run: go test -race ./...
+        env:
+          TEST_POSTGRES_DSN: postgres://postgres:synthetic-ci-postgres-password@127.0.0.1:${{ job.services.postgres.ports[5432] }}/store_contract?sslmode=disable
+          TEST_CLIENT_KEYS_POSTGRES_DSN: postgres://postgres:synthetic-ci-postgres-password@127.0.0.1:${{ job.services.clientkeys.ports[5432] }}/client_key_contract?sslmode=disable
       - run: go build ./cmd/...
       - run: python3 -m unittest discover -s scripts -p 'test_*.py'
       - run: node scripts/test_connection_actions.cjs
