@@ -45,12 +45,42 @@ jobs:
       - run: python3 -m unittest discover -s scripts -p 'test_*.py'
       - run: node scripts/test_connection_actions.cjs
   image:
-    name: Build container image
+    name: Build and publish container image
     needs: test
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    concurrency:
+      group: image-${{ github.ref }}
+      cancel-in-progress: true
+    env:
+      IMAGE: ghcr.io/dzarlax-ai/mcp-gateway
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Build linux/amd64 image
-        run: docker build --platform linux/amd64 --tag mcp-gateway:ci .
+        run: >-
+          docker build --platform linux/amd64 --tag mcp-gateway:ci
+          --label "org.opencontainers.image.source=https://github.com/Dzarlax-AI/mcp-gateway"
+          --label "org.opencontainers.image.revision=$GITHUB_SHA" .
       - name: Check non-root runtime
         run: test "$(docker image inspect mcp-gateway:ci --format '{{.Config.User}}')" = '65532:65532'
+      - name: Sign in to GHCR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'Dzarlax-AI/mcp-gateway'
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+      - name: Publish commit image and verify private visibility
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'Dzarlax-AI/mcp-gateway'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          docker tag mcp-gateway:ci "$IMAGE:$GITHUB_SHA"
+          docker push "$IMAGE:$GITHUB_SHA"
+          visibility=$(gh api orgs/Dzarlax-AI/packages/container/mcp-gateway --jq '.visibility')
+          test "$visibility" = private
+          docker tag mcp-gateway:ci "$IMAGE:latest"
+          docker push "$IMAGE:latest"
+      - name: Sign out of GHCR
+        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'Dzarlax-AI/mcp-gateway'
+        run: docker logout ghcr.io

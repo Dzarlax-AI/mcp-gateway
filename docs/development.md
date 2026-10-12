@@ -15,4 +15,12 @@ These are illustrative local test DSNs. The contract suites modify schema and da
 
 Go handles authentication, storage and server-side HTML. The admin has dependency-free browser JavaScript and CSS embedded into Go. The Node harness exercises the actual connection script. No frontend build is required.
 
+After tests pass, CI builds the non-root `linux/amd64` image. Pushes to `main`
+in `Dzarlax-AI/mcp-gateway` publish it to `ghcr.io/dzarlax-ai/mcp-gateway`
+using the workflow's `GITHUB_TOKEN`, with `latest` and full commit SHA tags.
+Pull requests and other branches only build. Package visibility is checked to
+be private before updating `latest`; no deployment is performed. Private pulls
+require GHCR authentication with package read access. Pin a commit tag or image
+digest when deploying rather than relying on the moving `latest` tag.
+
 Before publication, run `python3 scripts/prepare_github.py --output /tmp/mcp-gateway-github` to produce an explicit allowlist export and checksum manifest. The export preserves runtime source bytes; it does not initialize Git, create a remote, commit or push. Local deployment records and machine-specific instructions remain in the working directory.
