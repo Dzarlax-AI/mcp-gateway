@@ -1,0 +1,9 @@
+{
+  "servers": {},
+  "principals": {
+    "codex": {
+      "token_env": "GATEWAY_CODEX_TOKEN",
+      "grants": {}
+    }
+  }
+}

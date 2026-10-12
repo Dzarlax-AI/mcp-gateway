@@ -1,0 +1,26 @@
+{
+  "servers": {
+    "demo": {
+      "description": "Synthetic echo server; no real data or side effects",
+      "keywords": ["echo", "test"],
+      "url": "http://127.0.0.1:8081/mcp",
+      "token_env": "DEMO_UPSTREAM_TOKEN",
+      "enabled": true,
+      "tools": {"echo": {"enabled": true}}
+    }
+  },
+  "principals": {
+    "local": {
+      "token_env": "GATEWAY_DEMO_TOKEN",
+      "grants": {
+        "demo": {
+          "echo": {
+            "allowed_arguments": ["text"],
+            "required_arguments": ["text"],
+            "argument_equals": {}
+          }
+        }
+      }
+    }
+  }
+}

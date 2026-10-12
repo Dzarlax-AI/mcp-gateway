@@ -1,0 +1,34 @@
+{
+  "https_allowlist": ["https://developers.openai.com/mcp"],
+  "servers": {
+    "openai-docs": {
+      "description": "Public official OpenAI documentation; restricted read-only verification",
+      "keywords": ["openai", "docs", "codex", "documentation"],
+      "url": "https://developers.openai.com/mcp",
+      "enabled": true,
+      "tools": {
+        "search_openai_docs": {"enabled": true},
+        "fetch_openai_doc": {"enabled": true}
+      }
+    }
+  },
+  "principals": {
+    "codex": {
+      "token_env": "GATEWAY_CODEX_TOKEN",
+      "grants": {
+        "openai-docs": {
+          "search_openai_docs": {
+            "allowed_arguments": ["query", "limit"],
+            "required_arguments": ["query", "limit"],
+            "argument_equals": {"query": "Codex MCP configuration", "limit": 3}
+          },
+          "fetch_openai_doc": {
+            "allowed_arguments": ["url"],
+            "required_arguments": ["url"],
+            "argument_equals": {"url": "https://learn.chatgpt.com/docs/extend/mcp"}
+          }
+        }
+      }
+    }
+  }
+}
