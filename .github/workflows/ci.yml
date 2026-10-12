@@ -44,3 +44,13 @@ jobs:
       - run: go build ./cmd/...
       - run: python3 -m unittest discover -s scripts -p 'test_*.py'
       - run: node scripts/test_connection_actions.cjs
+  image:
+    name: Build container image
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Build linux/amd64 image
+        run: docker build --platform linux/amd64 --tag mcp-gateway:ci .
+      - name: Check non-root runtime
+        run: test "$(docker image inspect mcp-gateway:ci --format '{{.Config.User}}')" = '65532:65532'
