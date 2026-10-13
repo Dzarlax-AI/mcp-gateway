@@ -76,6 +76,16 @@ jobs:
           --label "org.opencontainers.image.revision=$GITHUB_SHA" .
       - name: Check non-root runtime
         run: test "$(docker image inspect mcp-gateway:ci --format '{{.Config.User}}')" = '65532:65532'
+      - name: Prepare private deployment artifact
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'Dzarlax-AI/mcp-gateway'
+        run: docker save mcp-gateway:ci | gzip > mcp-gateway-image.tar.gz
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'Dzarlax-AI/mcp-gateway'
+        with:
+          name: mcp-gateway-image-${{ github.sha }}
+          path: mcp-gateway-image.tar.gz
+          retention-days: 1
+          if-no-files-found: error
       - name: Sign in to GHCR
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'Dzarlax-AI/mcp-gateway'
         env:
