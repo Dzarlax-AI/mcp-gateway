@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "operations": [
+    {
+      "server_id": "demo",
+      "tool_name": "read_alpha",
+      "endpoint": "http://127.0.0.1:8081/mcp"
+    },
+    {
+      "server_id": "demo",
+      "tool_name": "read_beta",
+      "endpoint": "http://127.0.0.1:8081/mcp"
+    }
+  ]
+}

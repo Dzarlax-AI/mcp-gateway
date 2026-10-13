@@ -67,7 +67,11 @@ func run() error {
 			defer catalogs.Close()
 		}
 	}
-	h, e := (&gateway.Gateway{Path: path, Store: registry, Catalog: catalogs, Timeout: 10 * time.Second, PublicOrigin: origin}).Handler()
+	batch, e := readBatchOptions(catalogs != nil)
+	if e != nil {
+		return e
+	}
+	h, e := (&gateway.Gateway{Path: path, Store: registry, Catalog: catalogs, ReadBatch: batch, Timeout: 10 * time.Second, PublicOrigin: origin}).Handler()
 	if e != nil {
 		return e
 	}
@@ -199,4 +203,27 @@ func adminOptions(origin string) admin.Options {
 		return nil
 	}
 	return admin.Options{Token: os.Getenv("GATEWAY_ADMIN_TOKEN"), Origin: origin, BasePath: os.Getenv("GATEWAY_ADMIN_BASE_PATH"), AuthMode: os.Getenv("GATEWAY_ADMIN_AUTH_MODE"), TrustedProxyCIDRs: list("GATEWAY_ADMIN_TRUSTED_PROXY_CIDRS"), AllowedUsers: list("GATEWAY_ADMIN_ALLOWED_USERS"), AllowedGroups: list("GATEWAY_ADMIN_ALLOWED_GROUPS")}
+}
+
+// readBatchOptions validates the explicit opt-in without mutating registry data.
+func readBatchOptions(searchEnabled bool) (*gateway.ReadBatchExecutor, error) {
+	raw := os.Getenv("GATEWAY_READ_BATCH_ENABLED")
+	if raw == "" {
+		return nil, nil
+	}
+	enabled, err := strconv.ParseBool(raw)
+	if err != nil {
+		return nil, errors.New("GATEWAY_READ_BATCH_ENABLED must be a boolean")
+	}
+	if !enabled {
+		return nil, nil
+	}
+	if !searchEnabled {
+		return nil, errors.New("read batch requires tool search")
+	}
+	policy := &gateway.ReadBatchPolicy{Path: os.Getenv("GATEWAY_READ_BATCH_ALLOWLIST")}
+	if err := policy.Validate(); err != nil {
+		return nil, errors.New("read batch requires a valid operator allowlist")
+	}
+	return gateway.NewReadBatchExecutor(policy), nil
 }

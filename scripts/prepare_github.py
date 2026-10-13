@@ -12,6 +12,7 @@ FILES = [
     'README.md', 'Dockerfile', '.dockerignore', 'go.mod', 'go.sum',
     'CONTRIBUTING.md', 'SECURITY.md', 'CLAUDE.md', '.github/workflows/ci.yml',
     'config/example.json', 'config/bootstrap.json', 'config/codex-local.json',
+    'config/read-batch.example.json', 'scripts/measure_read_batch.go',
     'docs/self-hosting.md', 'docs/development.md', 'docs/security-model.md',
     'docs/claude.md', 'config/claude-mcp.json.example',
     'docs/repository/AGENTS.public.md', 'docs/repository/gitignore.public',

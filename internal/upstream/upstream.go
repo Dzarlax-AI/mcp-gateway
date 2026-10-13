@@ -111,7 +111,16 @@ func Connect(ctx context.Context, s config.Server) (*mcp.ClientSession, func(), 
 func ConnectWithToken(ctx context.Context, s config.Server, token string) (*mcp.ClientSession, func(), error) {
 	return connect(ctx, s, token, true)
 }
+
+// ConnectReadOnceWithToken disables SDK-driven input continuation as well as
+// transport retries. Batch items must perform at most one upstream invocation.
+func ConnectReadOnceWithToken(ctx context.Context, s config.Server, token string) (*mcp.ClientSession, func(), error) {
+	return connectOptions(ctx, s, token, true, true)
+}
 func connect(ctx context.Context, s config.Server, token string, restricted bool) (*mcp.ClientSession, func(), error) {
+	return connectOptions(ctx, s, token, restricted, false)
+}
+func connectOptions(ctx context.Context, s config.Server, token string, restricted, readOnce bool) (*mcp.ClientSession, func(), error) {
 	if restricted && !config.ValidURL(s.URL) && !config.ValidHTTPS(s.URL) {
 		return nil, func() {}, ErrUpstream
 	}
@@ -133,7 +142,11 @@ func connect(ctx context.Context, s config.Server, token string, restricted bool
 	pinned.endpoint = s.URL
 	base = pinned
 	h.Transport = deadlineTransport{base, ctx}
-	c := mcp.NewClient(&mcp.Implementation{Name: "mcp-gateway-upstream", Version: "0.1.0"}, &mcp.ClientOptions{Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	options := &mcp.ClientOptions{Logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	if readOnce {
+		options.MultiRoundTrip = &mcp.MultiRoundTripOptions{Disabled: true}
+	}
+	c := mcp.NewClient(&mcp.Implementation{Name: "mcp-gateway-upstream", Version: "0.1.0"}, options)
 	session, e := c.Connect(ctx, &mcp.StreamableClientTransport{Endpoint: s.URL, HTTPClient: h, MaxRetries: -1, DisableStandaloneSSE: true}, nil)
 	cleanup := h.CloseIdleConnections
 	if e != nil {

@@ -63,6 +63,18 @@ func run(mode, endpoint, addr string) error {
 				want = 5
 			}
 		}
+		if raw := os.Getenv("GATEWAY_READ_BATCH_ENABLED"); raw != "" {
+			enabled, err := strconv.ParseBool(raw)
+			if err != nil {
+				return errors.New("invalid GATEWAY_READ_BATCH_ENABLED")
+			}
+			if enabled {
+				if want != 5 {
+					return errors.New("read batch requires tool search")
+				}
+				want = 6
+			}
+		}
 		if e != nil || len(list.Tools) != want {
 			return errors.New("unexpected gateway tool count")
 		}

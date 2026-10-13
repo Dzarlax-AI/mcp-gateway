@@ -83,6 +83,51 @@ require a one-time client catalog refresh. Subsequent upstream additions do not
 require reconnecting. Disable this feature and restart to restore the old live
 catalog path. No database migration is needed.
 
+
+## Optional read batches
+
+Server initialization instructions describe the shortest supported path: invoke
+known tools directly, search unknown tools once, and reuse returned schemas.
+With both `GATEWAY_TOOL_SEARCH_ENABLED=true` and
+`GATEWAY_READ_BATCH_ENABLED=true`, the gateway exposes `invoke_read_batch`.
+`GATEWAY_READ_BATCH_ALLOWLIST` must point to a valid operator-managed JSON file;
+see [the synthetic example](../config/read-batch.example.json). The exact server,
+tool and endpoint tuple must be listed. Upstream annotations do not authorize
+batch reads, and the allowlist never grants normal tool access or enables a tool.
+Keep this file operator-controlled and replace it atomically.
+
+```json
+{"operations": [
+  {"id": "alpha", "server_id": "demo", "tool_name": "read_alpha", "arguments": {}},
+  {"id": "beta", "server_id": "demo", "tool_name": "read_beta", "arguments": {}}
+]}
+```
+
+Use batches only for independent reads whose behavior the operator has verified.
+For one operation, use `invoke_tool`. Each batch contains 1–8 unique operation IDs;
+at most three operations run concurrently per batch, eight globally for batch
+workloads, and four batches are admitted concurrently. Busy requests fail fast.
+The ten-second request deadline includes queue waiting and upstream calls.
+Current client authorization, switches, argument policy, allowlist and connection
+inputs are checked again before each invocation. Already dispatched operations
+can finish after revocation. No batch invocation is retried or deduplicated. Batch connections also disable
+the SDK automatic multi-round-trip continuation middleware.
+
+Results preserve input ID/order and contain per-item `status`, `dispatched` and
+an original MCP `tool_result` when available. Inspect every item and `complete`:
+a valid envelope with `isError=false` can contain failed operations.
+`upstream_error` also covers unsupported input-required results; inspect the
+original result rather than assuming its `isError` must be true. A dispatched
+transport error or timeout has an unknown upstream outcome. Results over 64 KiB
+per item or the 256 KiB total serialized response budget can be replaced with
+`result_omitted`; omission is not success and must not trigger an automatic retry.
+
+The feature is off by default and requires no registry change or SQL migration.
+The admin UI does not manage batch eligibility. Changing the fixed tool set may
+require an initial client refresh; changing the allowlist is read on subsequent
+admissions. Generic `invoke_tool` remains capable of writes and is not marked
+read-only. Disabling the batch flag restores the five-tool search interface.
+
 ## Authentik
 
 Set `GATEWAY_ADMIN_AUTH_MODE=authentik`, clear `GATEWAY_ADMIN_TOKEN`, and configure at least one of `GATEWAY_ADMIN_ALLOWED_USERS` or `GATEWAY_ADMIN_ALLOWED_GROUPS`. Configure `GATEWAY_ADMIN_TRUSTED_PROXY_CIDRS` with exact immediate proxy peers (`/32` or `/128`).

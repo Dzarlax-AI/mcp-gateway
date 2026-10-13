@@ -50,10 +50,19 @@ func run() error {
 	if e != nil {
 		return e
 	}
-	if e := checkExpectedTools(tools.Tools, searchEnabled); e != nil {
+	batchEnabled, e := toolSearchEnabled(os.Getenv("GATEWAY_READ_BATCH_ENABLED"))
+	if e != nil {
 		return e
 	}
-	if searchEnabled {
+	if batchEnabled && !searchEnabled {
+		return errors.New("read batch requires tool search")
+	}
+	if e := checkExpectedTools(tools.Tools, searchEnabled, batchEnabled); e != nil {
+		return e
+	}
+	if batchEnabled {
+		fmt.Println("PASS gateway tools/list: four fixed tools, search_tools and invoke_read_batch")
+	} else if searchEnabled {
 		fmt.Println("PASS gateway tools/list: four fixed tools and search_tools")
 	} else {
 		fmt.Println("PASS gateway tools/list: four fixed tools")
@@ -129,7 +138,7 @@ func run() error {
 	for _, tc := range []struct {
 		name string
 		args map[string]any
-	}{{"list_api_endpoints", map[string]any{}}, {"search_openai_docs", map[string]any{"query": "unapproved query", "limit": 3}}} {
+	}{{"list_api_endpoints", map[string]any{}}, {"search_openai_docs", map[string]any{"query": "Codex MCP configuration", "limit": "invalid"}}} {
 		_, e = invoke("invoke_tool", map[string]any{"server_id": "openai-docs", "tool_name": tc.name, "arguments": tc.args}, true)
 		if e != nil {
 			return e
@@ -150,10 +159,16 @@ func toolSearchEnabled(raw string) (bool, error) {
 	return enabled, nil
 }
 
-func checkExpectedTools(actual []*mcp.Tool, searchEnabled bool) error {
+func checkExpectedTools(actual []*mcp.Tool, searchEnabled bool, batchEnabled ...bool) error {
 	expected := []string{"discover_server", "discover_tools", "get_tool_schema", "invoke_tool"}
 	if searchEnabled {
 		expected = append(expected, "search_tools")
+	}
+	if len(batchEnabled) > 0 && batchEnabled[0] {
+		if !searchEnabled {
+			return errors.New("read batch requires tool search")
+		}
+		expected = append(expected, "invoke_read_batch")
 	}
 	got := make([]string, 0, len(actual))
 	for _, tool := range actual {

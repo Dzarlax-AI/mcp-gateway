@@ -75,3 +75,16 @@ func TestCheckConnectsThroughHTTPSWithTrustedCertificate(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestExpectedBatchToolSet(t *testing.T) {
+	tools := []*mcp.Tool{{Name: "discover_server"}, {Name: "discover_tools"}, {Name: "get_tool_schema"}, {Name: "invoke_tool"}, {Name: "search_tools"}, {Name: "invoke_read_batch"}}
+	if err := checkExpectedTools(tools, true, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := checkExpectedTools(tools, true, false); err == nil {
+		t.Fatal("unexpected batch accepted")
+	}
+	if err := checkExpectedTools(tools, false, true); err == nil {
+		t.Fatal("batch without search accepted")
+	}
+}
