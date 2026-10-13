@@ -171,7 +171,8 @@ Keep this file operator-controlled and replace it atomically.
 ```
 
 Use batches only for independent reads whose behavior the operator has verified.
-For one operation, use `invoke_tool`. Each batch contains 1–8 unique operation IDs;
+Use `invoke_read_batch` for every allowlisted read, including a single read.
+Use `invoke_tool` for other operations. Each batch contains 1–8 unique operation IDs;
 at most three operations run concurrently per batch, eight globally for batch
 workloads, and four batches are admitted concurrently. Busy requests fail fast.
 The ten-second request deadline includes queue waiting and upstream calls.

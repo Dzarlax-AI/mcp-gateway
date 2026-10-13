@@ -61,7 +61,7 @@ func TestInstructionsAndToolSets(t *testing.T) {
 			if tc.search && (!strings.Contains(prefix, "Do not search known tools") || !strings.Contains(prefix, "cannot discover gateway tools")) {
 				t.Fatal("direct invocation rule missing from prefix")
 			}
-			if tc.batch && !strings.Contains(prefix, "independent reads") {
+			if tc.batch && (!strings.Contains(prefix, "independent reads") || !strings.Contains(prefix, "including a single read") || !strings.Contains(prefix, "other operations with invoke_tool")) {
 				t.Fatal("batch rule outside first 512 chars")
 			}
 			tools, err := session.ListTools(context.Background(), nil)
@@ -70,6 +70,9 @@ func TestInstructionsAndToolSets(t *testing.T) {
 			}
 			for _, tool := range tools.Tools {
 				if tool.Name == "invoke_read_batch" {
+					if !strings.Contains(tool.Description, "including a single read") || strings.Contains(tool.Description, "Prefer invoke_tool") {
+						t.Fatal("batch description contradicts single-read routing")
+					}
 					if tool.Annotations == nil || !tool.Annotations.ReadOnlyHint || tool.Annotations.DestructiveHint == nil || *tool.Annotations.DestructiveHint {
 						t.Fatal("batch read annotations missing")
 					}
