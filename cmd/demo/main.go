@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -52,8 +53,18 @@ func run(mode, endpoint, addr string) error {
 		}
 		defer s.Close()
 		list, e := s.ListTools(ctx, nil)
-		if e != nil || len(list.Tools) != 4 {
-			return errors.New("expected four gateway tools")
+		want := 4
+		if raw := os.Getenv("GATEWAY_TOOL_SEARCH_ENABLED"); raw != "" {
+			enabled, err := strconv.ParseBool(raw)
+			if err != nil {
+				return errors.New("invalid GATEWAY_TOOL_SEARCH_ENABLED")
+			}
+			if enabled {
+				want = 5
+			}
+		}
+		if e != nil || len(list.Tools) != want {
+			return errors.New("unexpected gateway tool count")
 		}
 		for _, call := range []mcp.CallToolParams{{Name: "discover_server", Arguments: map[string]any{"query": "echo"}}, {Name: "discover_tools", Arguments: map[string]any{"server_id": "demo"}}, {Name: "get_tool_schema", Arguments: map[string]any{"server_id": "demo", "tool_name": "echo"}}, {Name: "invoke_tool", Arguments: map[string]any{"server_id": "demo", "tool_name": "echo", "arguments": map[string]any{"text": "Hello MVP"}}}} {
 			r, e := s.CallTool(ctx, &call)

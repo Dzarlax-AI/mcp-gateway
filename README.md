@@ -1,19 +1,63 @@
 # MCP Gateway
 
-A self-hosted Go gateway that connects MCP clients to multiple MCP servers through one Streamable HTTP endpoint. Inspired by [Uber's MCP Gateway](https://www.uber.com/re/en/blog/designing-mcp-gateway/).
+A self-hosted gateway for using multiple MCP servers from Codex, Claude Code and other Streamable HTTP clients through one connection.
 
-Clients see four fixed tools: discover servers, list tools, fetch a schema, and invoke a tool. The optional web admin manages servers, per-tool enablement, upstream credentials and client keys.
+## Why this exists
 
-## Features
+As your collection of MCP servers grows, each AI client needs its own list of
+endpoints, credentials and available tools. Adding a server or changing its
+credentials means updating those connections across applications. Exposing
+every upstream tool directly also gives the client a larger catalog to work
+through, even when a task needs only one service.
 
-- Native Streamable HTTP upstreams, with explicit HTTPS endpoint consent.
-- Server and tool enable/disable controls without page reloads.
-- SQLite or PostgreSQL persistence; explicit schema migrations.
-- Client authentication with one key through either Bearer or `X-API-Key`.
-- Named client keys with encrypted storage and on-demand show/copy/delete.
+MCP Gateway moves those connections into one place. Register your servers once,
+keep their credentials at the gateway, and connect each application to a single
+MCP endpoint with its own client key. You can then add servers, rotate upstream
+credentials or disable tools centrally, without editing each client's upstream
+configuration.
+
+By default, the client sees four gateway tools instead of the full upstream
+catalog. It discovers a server, lists that server's tools, loads the schema it
+needs, and invokes the selected tool. This lets an agent explore capabilities
+as the task requires them, rather than receiving every upstream tool definition
+at once. An explicit `GATEWAY_TOOL_SEARCH_ENABLED=true` opt-in adds
+`search_tools`, which returns matching tools with their schemas. It also enables
+a shared in-memory catalog cache with a 60-second TTL for metadata and invoke
+paths. A successful admin connection check publishes its verified catalog after
+the registry update commits. Tool switches use current policy and do not extend
+the catalog TTL.
+
+The project is inspired by [Uber's MCP Gateway](https://www.uber.com/re/en/blog/designing-mcp-gateway/)
+and built for running your own collection of MCP services.
+
+## How you use it
+
+For example, you might have separate MCP servers for documentation, a calendar
+and a personal knowledge base. Add them in the web admin, configure their
+authentication, and enable the tools you want to expose. Connect Codex and
+Claude Code to the gateway using a separate key for each application.
+
+When you ask an agent to search documentation, it can discover the documentation
+server and retrieve the search tool's schema before calling it. A later task
+can discover a different server through the same connection. The gateway routes
+the invocation to the saved endpoint and returns the upstream MCP result.
+
+The admin gives you one place to manage this catalog and its credentials. A
+server or tool switch controls availability across clients. Separate client
+keys let you revoke one application's connection while keeping the others.
+All client keys share access to enabled tools; they are not separate permission
+profiles.
+
+## What is supported
+
+- Streamable HTTP upstreams with explicit HTTPS endpoint consent.
+- A web admin for registering servers and enabling individual tools.
+- Separate client keys, with Bearer or `X-API-Key` authentication.
 - Upstream Bearer or custom credential headers, including `X-API-Key`.
-- Separate administrator authentication: token/session or trusted Authentik proxy.
-- Schema validation before invocation, bounded requests and no automatic invocation retries.
+- Encrypted credential storage with SQLite for a standalone installation or
+  PostgreSQL for an existing infrastructure database.
+- Administrator sign-in through a separate token or a trusted Authentik proxy.
+- Input schema validation and preservation of upstream MCP result types.
 
 ## Try the synthetic demo
 
@@ -91,6 +135,19 @@ Bearer or `X-API-Key` with an environment variable for the key. The root
 | `get_tool_schema` | `server_id`, `tool_name` | Load the current tool schema |
 | `invoke_tool` | `server_id`, `tool_name`, `arguments` | Validate and invoke an upstream tool |
 
+When `GATEWAY_TOOL_SEARCH_ENABLED=true`, the gateway also exposes:
+
+| Tool | Input | Purpose |
+| --- | --- | --- |
+| `search_tools` | `query`, optional `limit` and `server_id` | Find enabled, accessible tools and return their schemas |
+
+This option is disabled by default. The catalog is held in process memory and
+expires 60 seconds after a successful upstream catalog fetch. A successful
+admin **Check connection** publishes its checked catalog after the registry
+commit, so newly enabled tools can appear in the same client session. Enabling
+or disabling a tool applies current access policy and does not refresh the
+catalog's expiry time. Upstream change notifications are not used.
+
 Upstream MCP results preserve content types, structured content and `isError`. Schemas and returned content remain untrusted data. Tool annotations do not authorize an invocation.
 
 ## Access and security
@@ -102,6 +159,10 @@ Client keys authenticate using SHA-256 digests. Recoverable keys are stored sepa
 Read the [security model](docs/security-model.md) before exposing the service. The gateway does not implement client OAuth, stdio upstreams, legacy SSE upstreams, automatic retries, or semantic approval of modifying operations. HTTPS is terminated by your reverse proxy.
 
 ## Development
+
+Set `GATEWAY_TOOL_SEARCH_ENABLED=true` on the gateway process to try the optional
+search tool and catalog cache locally. Leave it unset or false to retain the
+four-tool catalog.
 
 ```sh
 go test ./...

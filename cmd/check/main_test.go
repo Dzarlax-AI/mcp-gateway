@@ -10,6 +10,41 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+func TestCheckExpectedToolsAreFeatureScoped(t *testing.T) {
+	legacy := []*mcp.Tool{
+		{Name: "discover_server"},
+		{Name: "discover_tools"},
+		{Name: "get_tool_schema"},
+		{Name: "invoke_tool"},
+	}
+	if err := checkExpectedTools(legacy, false); err != nil {
+		t.Fatalf("legacy tool set rejected: %v", err)
+	}
+	if err := checkExpectedTools(legacy, true); err == nil {
+		t.Fatal("feature-enabled check accepted a missing search_tools")
+	}
+	withSearch := append(append([]*mcp.Tool(nil), legacy...), &mcp.Tool{Name: "search_tools"})
+	if err := checkExpectedTools(withSearch, true); err != nil {
+		t.Fatalf("feature-enabled tool set rejected: %v", err)
+	}
+	withUnexpected := append(append([]*mcp.Tool(nil), withSearch...), &mcp.Tool{Name: "unexpected"})
+	if err := checkExpectedTools(withUnexpected, true); err == nil {
+		t.Fatal("accepted an unexpected tool in the feature-enabled catalog")
+	}
+}
+
+func TestToolSearchEnabledParsing(t *testing.T) {
+	for raw, want := range map[string]bool{"": false, "false": false, "true": true, "1": true} {
+		got, err := toolSearchEnabled(raw)
+		if err != nil || got != want {
+			t.Errorf("toolSearchEnabled(%q) = %v, %v; want %v", raw, got, err, want)
+		}
+	}
+	if _, err := toolSearchEnabled("sometimes"); err == nil {
+		t.Fatal("accepted invalid feature flag")
+	}
+}
+
 func TestCheckConnectsThroughHTTPSWithTrustedCertificate(t *testing.T) {
 	const token = "synthetic-public-check-token-123456"
 	t.Setenv("GATEWAY_CODEX_TOKEN", token)

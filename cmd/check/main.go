@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -41,10 +43,21 @@ func run() error {
 	}
 	defer cleanup()
 	tools, e := session.ListTools(ctx, nil)
-	if e != nil || len(tools.Tools) != 4 {
-		return errors.New("expected four gateway tools")
+	if e != nil {
+		return errors.New("gateway tools/list failed")
 	}
-	fmt.Println("PASS gateway tools/list: four fixed tools")
+	searchEnabled, e := toolSearchEnabled(os.Getenv("GATEWAY_TOOL_SEARCH_ENABLED"))
+	if e != nil {
+		return e
+	}
+	if e := checkExpectedTools(tools.Tools, searchEnabled); e != nil {
+		return e
+	}
+	if searchEnabled {
+		fmt.Println("PASS gateway tools/list: four fixed tools and search_tools")
+	} else {
+		fmt.Println("PASS gateway tools/list: four fixed tools")
+	}
 	invoke := func(name string, args map[string]any, wantError bool) (*mcp.CallToolResult, error) {
 		r, e := session.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: args})
 		if e != nil {
@@ -122,6 +135,42 @@ func run() error {
 			return e
 		}
 		fmt.Println("PASS denied:", tc.name)
+	}
+	return nil
+}
+
+func toolSearchEnabled(raw string) (bool, error) {
+	if raw == "" {
+		return false, nil
+	}
+	enabled, err := strconv.ParseBool(raw)
+	if err != nil {
+		return false, errors.New("GATEWAY_TOOL_SEARCH_ENABLED must be a boolean")
+	}
+	return enabled, nil
+}
+
+func checkExpectedTools(actual []*mcp.Tool, searchEnabled bool) error {
+	expected := []string{"discover_server", "discover_tools", "get_tool_schema", "invoke_tool"}
+	if searchEnabled {
+		expected = append(expected, "search_tools")
+	}
+	got := make([]string, 0, len(actual))
+	for _, tool := range actual {
+		if tool == nil {
+			return errors.New("gateway tools/list contained an invalid tool")
+		}
+		got = append(got, tool.Name)
+	}
+	sort.Strings(expected)
+	sort.Strings(got)
+	if len(got) != len(expected) {
+		return fmt.Errorf("unexpected gateway tool set: got %d tools, expected %d", len(got), len(expected))
+	}
+	for i := range expected {
+		if got[i] != expected[i] {
+			return errors.New("unexpected gateway tool set")
+		}
 	}
 	return nil
 }

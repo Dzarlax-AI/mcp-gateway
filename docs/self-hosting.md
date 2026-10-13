@@ -65,6 +65,24 @@ Route the exact `/gateway/mcp` to port 8080 and `/gateway/admin/` to port 8081, 
 
 `GATEWAY_MCP_EXTERNAL_URL` is an advertised address, not a routing configuration. Set it to the URL clients actually reach.
 
+## Optional tool search and catalog cache
+
+Set `GATEWAY_TOOL_SEARCH_ENABLED=true` on the gateway process to expose the fifth
+`search_tools` tool. It searches enabled, accessible tools and returns matching
+definitions and schemas. Existing discovery and invocation tools remain available.
+
+The gateway and admin share an in-memory catalog. A successful **Check connection**
+publishes the checked definitions after the registry commit. After explicitly
+enabling a newly discovered tool, clients can find and invoke it in their existing
+MCP session. Access switches are checked against the current registry on every
+request; they do not extend cache freshness. A 60-second TTL refreshes upstream
+changes made outside admin checks. Upstream notifications are not used.
+
+Changing from the default four-tool interface to the five-tool interface may
+require a one-time client catalog refresh. Subsequent upstream additions do not
+require reconnecting. Disable this feature and restart to restore the old live
+catalog path. No database migration is needed.
+
 ## Authentik
 
 Set `GATEWAY_ADMIN_AUTH_MODE=authentik`, clear `GATEWAY_ADMIN_TOKEN`, and configure at least one of `GATEWAY_ADMIN_ALLOWED_USERS` or `GATEWAY_ADMIN_ALLOWED_GROUPS`. Configure `GATEWAY_ADMIN_TRUSTED_PROXY_CIDRS` with exact immediate proxy peers (`/32` or `/128`).

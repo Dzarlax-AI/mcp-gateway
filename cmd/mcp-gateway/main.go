@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log"
 	"mcp-gateway/internal/admin"
+	"mcp-gateway/internal/catalog"
 	"mcp-gateway/internal/store"
 	"net"
 	"net/http"
@@ -55,7 +56,18 @@ func run() error {
 	if os.Getenv("GATEWAY_ADMIN_ADDR") != "" && registry == nil {
 		return errors.New("admin requires sqlite or postgres storage")
 	}
-	h, e := (&gateway.Gateway{Path: path, Store: registry, Timeout: 10 * time.Second, PublicOrigin: origin}).Handler()
+	var catalogs *catalog.Provider
+	if raw := os.Getenv("GATEWAY_TOOL_SEARCH_ENABLED"); raw != "" {
+		enabled, err := strconv.ParseBool(raw)
+		if err != nil {
+			return errors.New("GATEWAY_TOOL_SEARCH_ENABLED must be a boolean")
+		}
+		if enabled {
+			catalogs = catalog.New()
+			defer catalogs.Close()
+		}
+	}
+	h, e := (&gateway.Gateway{Path: path, Store: registry, Catalog: catalogs, Timeout: 10 * time.Second, PublicOrigin: origin}).Handler()
 	if e != nil {
 		return e
 	}
@@ -87,6 +99,7 @@ func run() error {
 			return e
 		}
 		opts := adminOptions(adminOrigin)
+		opts.Catalog = catalogs
 		opts.MCPEndpoint = connectionEndpoint(addr, origin)
 		a, e := admin.New(registry, opts)
 		if e != nil {

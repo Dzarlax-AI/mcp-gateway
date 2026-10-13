@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"mcp-gateway/internal/catalog"
 	"mcp-gateway/internal/config"
 	"mcp-gateway/internal/store"
 	"mcp-gateway/internal/upstream"
@@ -27,6 +28,7 @@ var errInput = errors.New("invalid input")
 var identifier = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127}$`)
 
 type Options struct {
+	Catalog           *catalog.Provider
 	MCPEndpoint       string
 	BasePath          string
 	Token             string
@@ -44,6 +46,7 @@ type probe struct {
 	failed   bool
 }
 type handler struct {
+	catalog       *catalog.Provider
 	s             store.Store
 	a             *auth
 	mu            sync.Mutex
@@ -88,7 +91,7 @@ func New(s store.Store, o Options) (http.Handler, error) {
 			return nil, errInput
 		}
 	}
-	return &handler{s: s, a: a, probes: map[string]probe{}, mcpEndpoint: o.MCPEndpoint, connectionTpl: template.Must(template.New("connection").Parse(connectionTemplate)), tpl: template.Must(template.New("page").Parse(strings.ReplaceAll(pageTemplate, `"/admin`, `"{{$.BasePath}}/admin`)))}, nil
+	return &handler{s: s, a: a, catalog: o.Catalog, probes: map[string]probe{}, mcpEndpoint: o.MCPEndpoint, connectionTpl: template.Must(template.New("connection").Parse(connectionTemplate)), tpl: template.Must(template.New("page").Parse(strings.ReplaceAll(pageTemplate, `"/admin`, `"{{$.BasePath}}/admin`)))}, nil
 }
 func equal(a, b string) bool { return b != "" && subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1 }
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -224,6 +227,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/admin/servers/"), "/")
 	secrets := map[string]*string{}
 	var nextProbe *probe
+	freshCheck := false
 	id := ""
 	if r.URL.Path == "/admin/servers/create" {
 		id = r.Form.Get("id")
@@ -283,6 +287,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					h.inputError(w, r, snap, sess.csrf, user, "Connection check failed. Verify the endpoint and authentication. No tools were invoked.", 502)
 					return
 				}
+				freshCheck = true
 			}
 			// Refresh the catalog without granting newly discovered tools.
 			for name := range p.tools {
@@ -358,6 +363,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Changes were not saved", 503)
 		return
 	}
+	h.updateCatalog(snap, saved, id, nextProbe, freshCheck)
 	h.mu.Lock()
 	delete(h.probes, id)
 	if nextProbe != nil {
