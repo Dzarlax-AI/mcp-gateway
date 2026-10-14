@@ -58,6 +58,18 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U postgres"
           --health-interval 5s --health-timeout 5s --health-retries 12
+      rotation:
+        image: postgres:17.11-alpine
+        env:
+          POSTGRES_PASSWORD: synthetic-ci-rotation-password
+          POSTGRES_DB: rotation_contract
+        ports:
+          - 5432/tcp
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+          --label purpose=gateway-rotation-synthetic
+        # Aggressive logging is separately exercised in the local rehearsal.
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
@@ -74,7 +86,17 @@ jobs:
           TEST_CATALOG_POSTGRES_DSN: postgres://postgres:synthetic-ci-postgres-password@127.0.0.1:${{ job.services.catalog.ports[5432] }}/catalog_session?sslmode=disable
           TEST_READ_BATCH_POSTGRES_DSN: postgres://postgres:synthetic-ci-postgres-password@127.0.0.1:${{ job.services.readbatch.ports[5432] }}/read_batch_contract?sslmode=disable
           TEST_CONNECTOR_POSTGRES_DSN: postgres://postgres:synthetic-ci-postgres-password@127.0.0.1:${{ job.services.connector.ports[5432] }}/connector_contract?sslmode=disable
+          TEST_ROTATION_POSTGRES_DSN: postgres://postgres:synthetic-ci-rotation-password@127.0.0.1:${{ job.services.rotation.ports[5432] }}/rotation_contract?sslmode=disable
       - run: go build ./cmd/...
+      - name: Rehearse secret rotation on isolated PostgreSQL
+        run: |
+          go build -o /tmp/gateway-rotation-registry ./cmd/registry
+          go build -o /tmp/gateway-rotation-server ./cmd/mcp-gateway
+          go build -o /tmp/gateway-rotation-fixture scripts/rotation_fixture.go
+          python3 -m unittest discover -s scripts -p 'test_rotate_gateway_secrets.py' -v
+        env:
+          TEST_ROTATION_REHEARSAL_ADMIN_URL: postgres://postgres:synthetic-ci-rotation-password@127.0.0.1:${{ job.services.rotation.ports[5432] }}/rotation_contract?sslmode=disable
+          TEST_ROTATION_REHEARSAL_CONTAINER: ${{ job.services.rotation.id }}
       - run: python3 -m unittest discover -s scripts -p 'test_*.py'
       - run: node scripts/test_connection_actions.cjs
   image:
