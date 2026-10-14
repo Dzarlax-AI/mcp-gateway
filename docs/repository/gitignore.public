@@ -39,3 +39,15 @@ config/*.tmp
 /docs/ai-plans/
 /docs/verification/
 /deploy/mcp-gateway/
+
+# Private rotation and recovery artifacts, even outside ignored directories.
+*.env
+*.private.json*
+*.sealed
+*.password
+operator.url*
+runtime.url
+old-runtime.url
+rendered-private.json*
+compose-effective.json
+compose-before.json
