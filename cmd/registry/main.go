@@ -14,6 +14,12 @@ import (
 )
 
 func run(args []string) error {
+	if len(args) > 0 && args[0] == "rotate-secret-key" {
+		return runRotation(args[1:])
+	}
+	if len(args) > 0 && args[0] == "seal-recovery" {
+		return runRecovery(args[1:])
+	}
 	if len(args) == 0 {
 		return fmt.Errorf("usage: registry migrate|import --file PATH|export|simplify|downgrade-client-keys")
 	}
