@@ -191,7 +191,7 @@ per item or the 256 KiB total serialized response budget can be replaced with
 `result_omitted`; omission is not success and must not trigger an automatic retry.
 
 The feature is off by default and requires no registry change or SQL migration.
-The admin UI does not manage batch eligibility. Changing the fixed tool set may
+In legacy file policy mode the admin UI does not manage batch eligibility. Changing the fixed tool set may
 require an initial client refresh; changing the allowlist is read on subsequent
 admissions. Generic `invoke_tool` remains capable of writes and is not marked
 read-only. Disabling the batch flag restores the five-tool search interface.
@@ -232,3 +232,14 @@ Go tests use synthetic credentials and local listeners. PostgreSQL parity tests 
 - `Dockerfile`: non-root image containing gateway and registry binaries.
 
 Publication bundles exclude local deployment history, production settings, screenshots, private credentials and machine-specific agent instructions.
+
+
+### Connector read profiles (local revision 1)
+
+Set `GATEWAY_READ_BATCH_POLICY_MODE=registry` with tool search and read batch enabled; leave `GATEWAY_READ_BATCH_ALLOWLIST` unset. The legacy default remains `file` and keeps the existing exact operator allowlist. The two sources cannot be combined.
+
+Registry mode exposes one **Batch for reads** switch per connector and a reviewed profile selector. Calendar MCP and Home Assistant profiles permit only exact reviewed read contracts. Unknown or changed tools stay ordinary-only. Ordinary server/tool enablement and client authorization still apply; profile selection does not grant access. No per-tool batch override exists.
+
+The settings persist via existing registry CAS (no SQL migration), while eligibility follows current catalog metadata. Check/TTL and later requests in the same MCP session observe changes. New tool discovery does not automatically enable ordinary access. Search/discovery expose advisory `batch_read_allowed` and `batch_read_reason`; dispatch rechecks them against current policy. Endpoint/auth/credential changes clear the connector batch approval.
+
+See [local acceptance, protocol limitation, future release and rollback](docs/deployment/connector-batch-reading.md). This revision has not been deployed.

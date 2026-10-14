@@ -14,6 +14,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"mcp-gateway/internal/catalog"
 	"mcp-gateway/internal/policy"
+	"mcp-gateway/internal/readpolicy"
 	"mcp-gateway/internal/store"
 	"mcp-gateway/internal/upstream"
 )
@@ -187,8 +188,26 @@ func (b *ReadBatchExecutor) execute(ctx context.Context, g *Gateway, headers htt
 		r.Status = "timeout"
 		return r
 	}
+	var checkedTool *mcp.Tool
 	admit := func() (store.Snapshot, string, catalog.Connection, error) {
-		return readBatchAdmit(ctx, g, b.policy, headers, op, args)
+		snap, principal, c, err := readBatchAdmit(ctx, g, b.policy, headers, op, args)
+		if err == nil && b.policy.Registry && checkedTool != nil {
+			latest, e := g.Catalog.Get(ctx, c, false)
+			if e != nil {
+				err = e
+			} else {
+				err = readBatchDenied
+				for _, t := range latest {
+					if t.Name == checkedTool.Name {
+						if allowed, _ := c.Server.BatchReadDecision(t); allowed {
+							err = nil
+						}
+						break
+					}
+				}
+			}
+		}
+		return snap, principal, c, err
 	}
 	snapshot, principal, conn, err := admit()
 	if err != nil {
@@ -226,6 +245,12 @@ func (b *ReadBatchExecutor) execute(ctx context.Context, g *Gateway, headers htt
 			r.Status = "unavailable"
 		}
 		return r
+	}
+	checkedTool = tool
+	if b.policy.Registry {
+		if allowed, _ := conn.Server.BatchReadDecision(tool); !allowed || !readpolicy.Arguments(tool, args) {
+			return r
+		}
 	}
 	if upstream.Validate(tool.InputSchema, args) != nil {
 		r.Status = "invalid_arguments"
@@ -318,7 +343,7 @@ func readBatchAdmit(ctx context.Context, g *Gateway, p *ReadBatchPolicy, headers
 		return snapshot, "", catalog.Connection{}, readBatchDenied
 	}
 	server, ok := snapshot.Config.Servers[op.ServerID]
-	if !ok || p.Allows(op.ServerID, op.ToolName, server.URL) != nil {
+	if !ok || p == nil || (!p.Registry && p.Allows(op.ServerID, op.ToolName, server.URL) != nil) || (p.Registry && (!server.BatchReadEnabled || server.BatchReadEndpoint != server.URL)) {
 		return snapshot, "", catalog.Connection{}, readBatchDenied
 	}
 	conn, err := catalog.FromSnapshot(snapshot, op.ServerID)
@@ -360,4 +385,8 @@ func serializedSize(v any) int {
 		return readBatchOutputBudget + 1
 	}
 	return len(b)
+}
+
+func (b *ReadBatchExecutor) RegistryMode() bool {
+	return b != nil && b.policy != nil && b.policy.Registry
 }

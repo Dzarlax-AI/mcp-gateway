@@ -1,0 +1,198 @@
+[
+  {
+    "annotations": {
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": true,
+      "readOnlyHint": false
+    },
+    "description": "Return the operations, fields, mutation scopes, and notification policies supported by a calendar.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "calendar_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "calendar_id"
+      ],
+      "type": "object"
+    },
+    "name": "get_calendar_capabilities"
+  },
+  {
+    "annotations": {
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": true,
+      "readOnlyHint": false
+    },
+    "description": "List the concrete occurrences of a recurring series in a bounded time range.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "calendar_id": {
+          "type": "string"
+        },
+        "end": {
+          "type": "string"
+        },
+        "event_id": {
+          "type": "string"
+        },
+        "max_results": {
+          "type": "integer"
+        },
+        "page_token": {
+          "type": "string"
+        },
+        "show_deleted": {
+          "type": "boolean"
+        },
+        "start": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "calendar_id",
+        "event_id",
+        "start",
+        "end"
+      ],
+      "type": "object"
+    },
+    "name": "get_event_instances_v2"
+  },
+  {
+    "annotations": {
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": true,
+      "readOnlyHint": false
+    },
+    "description": "Get one event by its provider-prefixed calendar and event IDs.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "calendar_id": {
+          "type": "string"
+        },
+        "event_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "calendar_id",
+        "event_id"
+      ],
+      "type": "object"
+    },
+    "name": "get_event_v2"
+  },
+  {
+    "annotations": {
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": true,
+      "readOnlyHint": false
+    },
+    "description": "List events with explicit recurrence view, pagination metadata, and per-source completeness.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "calendar_id": {
+          "type": "string"
+        },
+        "end": {
+          "type": "string"
+        },
+        "max_results": {
+          "type": "integer"
+        },
+        "page_token": {
+          "type": "string"
+        },
+        "show_deleted": {
+          "type": "boolean"
+        },
+        "start": {
+          "type": "string"
+        },
+        "view": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "start",
+        "end"
+      ],
+      "type": "object"
+    },
+    "name": "get_events_v2"
+  },
+  {
+    "annotations": {
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": true,
+      "readOnlyHint": false
+    },
+    "description": "List all calendars across Google, Microsoft 365, and Apple accounts. Returns calendar IDs needed for other operations.",
+    "inputSchema": {
+      "properties": {},
+      "required": [],
+      "type": "object"
+    },
+    "name": "list_calendars"
+  },
+  {
+    "annotations": {
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": true,
+      "readOnlyHint": false
+    },
+    "description": "Search events in one calendar or across all configured providers, with optional time and event-type filters.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "calendar_id": {
+          "type": "string"
+        },
+        "end": {
+          "type": "string"
+        },
+        "event_types": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "null",
+            "array"
+          ]
+        },
+        "max_results": {
+          "type": "integer"
+        },
+        "page_token": {
+          "type": "string"
+        },
+        "query": {
+          "type": "string"
+        },
+        "show_deleted": {
+          "type": "boolean"
+        },
+        "start": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    },
+    "name": "search_events_v2"
+  }
+]

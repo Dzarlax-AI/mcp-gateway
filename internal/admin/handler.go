@@ -20,6 +20,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"mcp-gateway/internal/catalog"
 	"mcp-gateway/internal/config"
+	"mcp-gateway/internal/readpolicy"
 	"mcp-gateway/internal/store"
 	"mcp-gateway/internal/upstream"
 )
@@ -28,6 +29,7 @@ var errInput = errors.New("invalid input")
 var identifier = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127}$`)
 
 type Options struct {
+	BatchRegistry     bool
 	Catalog           *catalog.Provider
 	MCPEndpoint       string
 	BasePath          string
@@ -46,6 +48,7 @@ type probe struct {
 	failed   bool
 }
 type handler struct {
+	batchRegistry bool
 	catalog       *catalog.Provider
 	s             store.Store
 	a             *auth
@@ -91,7 +94,7 @@ func New(s store.Store, o Options) (http.Handler, error) {
 			return nil, errInput
 		}
 	}
-	return &handler{s: s, a: a, catalog: o.Catalog, probes: map[string]probe{}, mcpEndpoint: o.MCPEndpoint, connectionTpl: template.Must(template.New("connection").Parse(connectionTemplate)), tpl: template.Must(template.New("page").Parse(strings.ReplaceAll(pageTemplate, `"/admin`, `"{{$.BasePath}}/admin`)))}, nil
+	return &handler{batchRegistry: o.BatchRegistry, s: s, a: a, catalog: o.Catalog, probes: map[string]probe{}, mcpEndpoint: o.MCPEndpoint, connectionTpl: template.Must(template.New("connection").Parse(connectionTemplate)), tpl: template.Must(template.New("page").Parse(strings.ReplaceAll(pageTemplate, `"/admin`, `"{{$.BasePath}}/admin`)))}, nil
 }
 func equal(a, b string) bool { return b != "" && subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1 }
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -254,6 +257,65 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		p, pok := h.currentProbe(id, snap)
 		switch parts[1] {
+		case "batch-profile":
+			if !h.batchRegistry {
+				e = errInput
+				break
+			}
+			profile := r.Form.Get("batch_read_profile")
+			if profile != "" && !readpolicy.Known(profile) {
+				e = errInput
+				break
+			}
+			server.BatchReadProfile = profile
+			server.BatchReadEnabled = false
+			server.BatchReadEndpoint = ""
+			c.Servers[id] = server
+			if pok {
+				nextProbe = &p
+			}
+		case "batch-disable":
+			if !h.batchRegistry {
+				e = errInput
+				break
+			}
+			server.BatchReadEnabled = false
+			server.BatchReadEndpoint = ""
+			c.Servers[id] = server
+			if pok {
+				nextProbe = &p
+			}
+		case "batch-enable":
+			if !h.batchRegistry {
+				e = errInput
+				break
+			}
+			if !readpolicy.Known(server.BatchReadProfile) {
+				h.inputError(w, r, snap, sess.csrf, user, "Choose a reviewed read profile in Server settings before enabling batch.", 400)
+				return
+			}
+			if !pok {
+				p, e = h.check(r.Context(), snap, id, server)
+				if e != nil {
+					h.inputError(w, r, snap, sess.csrf, user, "Connection check failed. No tools were invoked.", 502)
+					return
+				}
+				freshCheck = true
+			}
+			safe := 0
+			for name, t := range p.tools {
+				if allowed, _ := readpolicy.Classify(server.BatchReadProfile, t); allowed && server.Tools[name].Enabled {
+					safe++
+				}
+			}
+			if !server.Enabled || safe == 0 {
+				h.inputError(w, r, snap, sess.csrf, user, "Enable the connector and at least one verified read tool before enabling batch.", 400)
+				return
+			}
+			server.BatchReadEnabled = true
+			server.BatchReadEndpoint = server.URL
+			c.Servers[id] = server
+			nextProbe = &p
 		case "update":
 			oldURL := server.URL
 			oldHeader := server.AuthHeader
@@ -271,6 +333,10 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				clearGrants(c, id)
 			} else if pok && len(secrets) == 0 && oldHeader == server.AuthHeader && oldEnv == server.TokenEnv && oldRef == server.TokenRef {
 				nextProbe = &p
+			}
+			if server.URL != oldURL || server.AuthHeader != oldHeader || server.TokenEnv != oldEnv || server.TokenRef != oldRef || len(secrets) > 0 {
+				server.BatchReadEnabled = false
+				server.BatchReadEndpoint = ""
 			}
 			c.Servers[id] = server
 
@@ -559,15 +625,19 @@ func (h *handler) inputError(w http.ResponseWriter, r *http.Request, snap store.
 type toolView struct {
 	Name, Description, Schema string
 	Enabled                   bool
+	BatchAllowed              bool
+	BatchReason               string
 }
 type serverView struct {
-	ID           string
-	Server       config.Server
-	Secret       bool
-	Checked      string
-	Failed       string
-	Tools        []toolView
-	EnabledTools int
+	ID            string
+	Server        config.Server
+	Secret        bool
+	Checked       string
+	Failed        string
+	Tools         []toolView
+	EnabledTools  int
+	BatchRegistry bool
+	BatchCount    int
 }
 type page struct {
 	BasePath  string
@@ -590,7 +660,7 @@ func (h *handler) view(s store.Snapshot, csrf string) page {
 	sort.Strings(ids)
 	for _, id := range ids {
 		server := s.Config.Servers[id]
-		sv := serverView{ID: id, Server: server, Secret: server.TokenEnv != "" || server.TokenRef != ""}
+		sv := serverView{BatchRegistry: h.batchRegistry, ID: id, Server: server, Secret: server.TokenEnv != "" || server.TokenRef != ""}
 		p, ok := h.currentProbe(id, s)
 		if p.failed && p.revision == s.Revision {
 			sv.Failed = p.at.Format(time.RFC3339)
@@ -614,6 +684,19 @@ func (h *handler) view(s store.Snapshot, csrf string) page {
 				schema, _ := json.MarshalIndent(tool.InputSchema, "", "  ")
 				tv.Description, tv.Schema = tool.Description, string(schema)
 			}
+			if h.batchRegistry {
+				tv.BatchAllowed, tv.BatchReason = server.BatchReadDecision(p.tools[name])
+				if !ok {
+					tv.BatchAllowed = false
+					tv.BatchReason = "catalog_unavailable"
+				}
+			} else {
+				tv.BatchReason = "operator_file"
+			}
+			if tv.BatchAllowed {
+				sv.BatchCount++
+			}
+			tv.BatchReason = readpolicy.Label(tv.BatchReason)
 			sv.Tools = append(sv.Tools, tv)
 		}
 		v.Servers = append(v.Servers, sv)
@@ -659,10 +742,14 @@ func (h *handler) currentProbe(id string, s store.Snapshot) (probe, bool) {
 // Only display metadata is returned. Credential sources and values never enter this response.
 func (h *handler) actionState(w http.ResponseWriter, s store.Snapshot) {
 	type serverState struct {
-		ID      string     `json:"id"`
-		Enabled bool       `json:"enabled"`
-		Checked string     `json:"checked"`
-		Tools   []toolView `json:"tools"`
+		ID            string     `json:"id"`
+		Enabled       bool       `json:"enabled"`
+		Checked       string     `json:"checked"`
+		Tools         []toolView `json:"tools"`
+		BatchRegistry bool       `json:"batch_registry"`
+		BatchEnabled  bool       `json:"batch_enabled"`
+		BatchProfile  string     `json:"batch_profile"`
+		BatchCount    int        `json:"batch_count"`
 	}
 	out := struct {
 		Revision int64         `json:"revision"`
@@ -672,7 +759,7 @@ func (h *handler) actionState(w http.ResponseWriter, s store.Snapshot) {
 		if v.Tools == nil {
 			v.Tools = []toolView{}
 		}
-		out.Servers = append(out.Servers, serverState{v.ID, v.Server.Enabled, v.Checked, v.Tools})
+		out.Servers = append(out.Servers, serverState{v.ID, v.Server.Enabled, v.Checked, v.Tools, v.BatchRegistry, v.BatchRegistry && v.Server.BatchReadEnabled, v.Server.BatchReadProfile, v.BatchCount})
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(out)

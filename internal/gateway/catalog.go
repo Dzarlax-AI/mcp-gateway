@@ -10,6 +10,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"mcp-gateway/internal/catalog"
+	"mcp-gateway/internal/config"
 	"mcp-gateway/internal/policy"
 	"mcp-gateway/internal/store"
 	"mcp-gateway/internal/upstream"
@@ -26,13 +27,16 @@ func (g *Gateway) cached(ctx context.Context, snapshot store.Snapshot, principal
 	}
 	if operation == "discover_tools" {
 		type item struct {
-			Name        string `json:"name"`
-			Description string `json:"description"`
+			Name             string `json:"name"`
+			Description      string `json:"description"`
+			BatchReadAllowed bool   `json:"batch_read_allowed"`
+			BatchReadReason  string `json:"batch_read_reason"`
 		}
 		out := []item{}
 		for _, t := range tools {
 			if _, err := policy.Grant(snapshot.Config, principal, a.Server, t.Name); err == nil {
-				out = append(out, item{t.Name, t.Description})
+				allowed, reason := g.batchEligibility(a.Server, c.Server, t)
+				out = append(out, item{t.Name, t.Description, allowed, reason})
 			}
 		}
 		sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
@@ -83,13 +87,15 @@ func (g *Gateway) cached(ctx context.Context, snapshot store.Snapshot, principal
 const searchBudget = 128 << 10
 
 type searchItem struct {
-	ServerID       string    `json:"server_id"`
-	ToolName       string    `json:"tool_name"`
-	Description    string    `json:"description"`
-	Definition     *mcp.Tool `json:"tool_definition,omitempty"`
-	SchemaIncluded bool      `json:"schema_included"`
-	OmittedReason  string    `json:"schema_omitted_reason,omitempty"`
-	score          int
+	ServerID         string    `json:"server_id"`
+	ToolName         string    `json:"tool_name"`
+	Description      string    `json:"description"`
+	Definition       *mcp.Tool `json:"tool_definition,omitempty"`
+	SchemaIncluded   bool      `json:"schema_included"`
+	OmittedReason    string    `json:"schema_omitted_reason,omitempty"`
+	BatchReadAllowed bool      `json:"batch_read_allowed"`
+	BatchReadReason  string    `json:"batch_read_reason"`
+	score            int
 }
 type searchResult struct {
 	Tools       []searchItem `json:"tools"`
@@ -182,7 +188,8 @@ func (g *Gateway) search(ctx context.Context, snapshot store.Snapshot, principal
 					}
 				}
 				if score > 0 {
-					candidates = append(candidates, searchItem{ServerID: id, ToolName: t.Name, Description: t.Description, Definition: t, SchemaIncluded: true, score: score})
+					allowed, reason := g.batchEligibility(id, server, t)
+					candidates = append(candidates, searchItem{BatchReadAllowed: allowed, BatchReadReason: reason, ServerID: id, ToolName: t.Name, Description: t.Description, Definition: t, SchemaIncluded: true, score: score})
 					if len(candidates) > a.Limit {
 						sort.Slice(candidates, less)
 						candidates = candidates[:a.Limit]
@@ -219,4 +226,17 @@ func (g *Gateway) search(ctx context.Context, snapshot store.Snapshot, principal
 		return failure(errors.New("search response exceeds budget"))
 	}
 	return result(out)
+}
+
+func (g *Gateway) batchEligibility(id string, s config.Server, t *mcp.Tool) (bool, string) {
+	if g.ReadBatch == nil {
+		return false, "batch_disabled"
+	}
+	if g.ReadBatch.RegistryMode() {
+		return s.BatchReadDecision(t)
+	}
+	if s.Enabled && s.Tools[t.Name].Enabled && g.ReadBatch.policy.Allows(id, t.Name, s.URL) == nil {
+		return true, "operator_file_read"
+	}
+	return false, "operator_file_denied"
 }
