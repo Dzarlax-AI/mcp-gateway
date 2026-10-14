@@ -6,7 +6,7 @@
   let uncertain = false;
   function lock(value) {
     busy = value;
-    document.querySelectorAll('form button, [data-refresh]').forEach(b => { b.disabled = value || (uncertain && !b.matches('[data-refresh]')); });
+    document.querySelectorAll('form button, [data-refresh]').forEach(b => { b.disabled = b.hasAttribute("data-fixed-disabled") || value || (uncertain && !b.matches('[data-refresh]')); });
   }
   function status(card, message, refresh = false) {
     card.querySelector('[data-action-status]').textContent = message;
@@ -32,6 +32,14 @@
       if (!serverForm) continue;
       serverForm.action = base + '/admin/servers/' + encodeURIComponent(server.id) + (server.enabled ? '/disable' : '/enable');
       setSwitch(serverForm.querySelector('button'), server.enabled, 'Enable server ' + server.id);
+      const batchForm=card.querySelector('[data-batch-switch]');
+      if (batchForm) {
+        batchForm.action=base+'/admin/servers/'+encodeURIComponent(server.id)+(server.batch_enabled?'/batch-disable':'/batch-enable');
+        setSwitch(batchForm.querySelector('button'),Boolean(server.batch_enabled),'Enable batch reads on '+server.id);
+        card.querySelector('[data-batch-count]').textContent=server.batch_count+' verified enabled reads';
+      }
+      const profile=card.querySelector('[data-batch-profile]');
+      if (profile && !profile.dataset.dirty) profile.querySelector('select').value=server.batch_profile;
       const enabledCount = server.tools.filter(t => t.Enabled).length;
       card.querySelector('[data-tool-count]').textContent = enabledCount + '/' + server.tools.length + ' tools enabled';
       card.querySelector('[data-tools-count]').textContent = enabledCount + '/' + server.tools.length + ' enabled';
@@ -49,6 +57,7 @@
           const details = document.createElement('details'); details.className = 'tool-details'; row.append(details);
           const summary = document.createElement('summary'); summary.dataset.toolName = ''; details.append(summary);
           const description = document.createElement('p'); description.dataset.description = ''; details.append(description);
+          const reason=document.createElement('p');reason.dataset.batchReason='';details.append(reason);
           const schema = document.createElement('details'); schema.dataset.schema = ''; schema.append(document.createElement('summary'), document.createElement('pre')); schema.firstChild.textContent = 'Input schema'; details.append(schema);
           const form = document.createElement('form'); form.method = 'post'; form.dataset.quick = '';
           const csrf = document.querySelector('input[name=csrf]').value;
@@ -59,6 +68,7 @@
         }
         row.querySelector('[data-tool-name]').textContent = tool.Name;
         row.querySelector('[data-description]').textContent = tool.Description;
+        row.querySelector('[data-batch-reason]').textContent=tool.BatchReason;
         const schema = row.querySelector('[data-schema]'); schema.hidden = !tool.Schema; schema.querySelector('pre').textContent = tool.Schema;
         const form = row.querySelector('form'); form.action = base + '/admin/servers/' + encodeURIComponent(server.id) + (tool.Enabled ? '/tool-disable' : '/tool-enable');
         setSwitch(form.querySelector('button'), tool.Enabled, 'Enable tool ' + tool.Name + ' on server ' + server.id);
@@ -82,12 +92,12 @@
     event.preventDefault();
     const card = form.closest('[data-server]'); const button = form.querySelector('button');
     const body = new URLSearchParams(new FormData(form));
-    const checking = /\/(check|enable|tool-enable)$/.test(form.action);
+    const checking = /\/(check|enable|tool-enable|batch-enable)$/.test(form.action);
     lock(true); button.setAttribute('aria-busy', 'true'); status(card, checking ? 'Checking and saving…' : 'Saving…');
     try {
       const response = await fetch(form.action, {method: 'POST', credentials: 'same-origin', headers: {'Accept': 'application/json'}, body, redirect: 'error'});
       if (!response.ok) {
-        const messages = {401: 'Session expired. Sign in again.', 403: 'Access or CSRF check failed. Reload and sign in again.', 409: 'Registry changed. Refresh state before trying again.', 502: 'Connection check failed. Verify the endpoint and authentication.'};
+        const messages = {400: form.matches('[data-batch-switch]') ? 'Batch requires a reviewed profile, an enabled connector and an enabled verified read. Check connection and settings.' : 'Invalid settings. Review the form before retrying.', 401: 'Session expired. Sign in again.', 403: 'Access or CSRF check failed. Reload and sign in again.', 409: 'Registry changed. Refresh state before trying again.', 502: 'Connection check failed. Verify the endpoint and authentication.'};
         status(card, messages[response.status] || 'Action failed. Refresh state to verify whether it was saved.', response.status !== 401 && response.status !== 403);
         if ([401,403,409].includes(response.status) || (response.status >= 500 && response.status !== 502)) uncertain = true;
         return;

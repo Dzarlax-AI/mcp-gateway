@@ -1,0 +1,20 @@
+{
+  "upstream_commit": "0596e129ec5df7e840e78c5d8869150c38663ca6",
+  "files": [
+    {
+      "url": "https://raw.githubusercontent.com/home-assistant/core/0596e129ec5df7e840e78c5d8869150c38663ca6/homeassistant/components/homeassistant/llm.py",
+      "sha256": "0bfd89525953b0a12119996323061140970f4ffe6d7a5466e458b084c916e3e9",
+      "tool": "homeassistant__GetLiveContext",
+      "description_title_match": true,
+      "review": "DateTime reads local clock; LiveContext reads exposed entities/states and performs matching; no device/service dispatch in these handlers"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/home-assistant/core/0596e129ec5df7e840e78c5d8869150c38663ca6/homeassistant/components/llm/llm.py",
+      "sha256": "21972c10c8449482436dce3d546faad69112fc604a2892257f96289d94762fd9",
+      "tool": "llm__GetDateTime",
+      "description_title_match": true,
+      "review": "DateTime reads local clock; LiveContext reads exposed entities/states and performs matching; no device/service dispatch in these handlers"
+    }
+  ],
+  "contract_origin": "Prior current-chat discovery schemas; verified against official source; no live calls in this implementation"
+}

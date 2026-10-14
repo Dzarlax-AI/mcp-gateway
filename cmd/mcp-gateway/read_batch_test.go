@@ -28,3 +28,21 @@ func TestReadBatchStartupOptions(t *testing.T) {
 		})
 	}
 }
+
+func TestRegistryReadBatchStartupMode(t *testing.T) {
+	t.Setenv("GATEWAY_READ_BATCH_ENABLED", "true")
+	t.Setenv("GATEWAY_READ_BATCH_POLICY_MODE", "registry")
+	t.Setenv("GATEWAY_READ_BATCH_ALLOWLIST", "")
+	b, e := readBatchOptions(true)
+	if e != nil || !b.RegistryMode() {
+		t.Fatalf("registry mode: %v", e)
+	}
+	t.Setenv("GATEWAY_READ_BATCH_ALLOWLIST", "unexpected.json")
+	if _, e = readBatchOptions(true); e == nil {
+		t.Fatal("mixed mode accepted")
+	}
+	t.Setenv("GATEWAY_READ_BATCH_POLICY_MODE", "unknown")
+	if _, e = readBatchOptions(true); e == nil {
+		t.Fatal("unknown mode accepted")
+	}
+}

@@ -8,7 +8,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"io"
+	"mcp-gateway/internal/readpolicy"
 	"net"
 	"net/http"
 	"net/url"
@@ -26,14 +28,17 @@ type Config struct {
 	Principals     map[string]Principal `json:"principals"`
 }
 type Server struct {
-	Description string          `json:"description"`
-	Keywords    []string        `json:"keywords"`
-	URL         string          `json:"url"`
-	TokenEnv    string          `json:"token_env,omitempty"`
-	TokenRef    string          `json:"token_ref,omitempty"`
-	AuthHeader  string          `json:"auth_header,omitempty"`
-	Enabled     bool            `json:"enabled"`
-	Tools       map[string]Tool `json:"tools"`
+	BatchReadEnabled  bool            `json:"batch_read_enabled,omitempty"`
+	BatchReadProfile  string          `json:"batch_read_profile,omitempty"`
+	BatchReadEndpoint string          `json:"batch_read_endpoint,omitempty"`
+	Description       string          `json:"description"`
+	Keywords          []string        `json:"keywords"`
+	URL               string          `json:"url"`
+	TokenEnv          string          `json:"token_env,omitempty"`
+	TokenRef          string          `json:"token_ref,omitempty"`
+	AuthHeader        string          `json:"auth_header,omitempty"`
+	Enabled           bool            `json:"enabled"`
+	Tools             map[string]Tool `json:"tools"`
 }
 type Tool struct {
 	Enabled    bool   `json:"enabled"`
@@ -235,6 +240,9 @@ func (c *Config) Validate() error {
 		tokens[digest] = true
 	}
 	for id, s := range c.Servers {
+		if (s.BatchReadProfile != "" && !readpolicy.Known(s.BatchReadProfile)) || (s.BatchReadEnabled && (s.BatchReadProfile == "" || s.BatchReadEndpoint != s.URL)) || (!s.BatchReadEnabled && s.BatchReadEndpoint != "") {
+			return ErrConfig
+		}
 		if !ident.MatchString(id) || !c.AllowsEndpoint(s.URL) || s.Tools == nil || (s.TokenRef != "" && (s.TokenRef != id || s.TokenEnv != "")) {
 			return ErrConfig
 		}
@@ -390,4 +398,24 @@ func SimplifyAccess(c *Config) bool {
 		}
 	}
 	return changed
+}
+
+// BatchReadDecision is shared by runtime and admin presentation. It grants no client access.
+func (s Server) BatchReadDecision(tool *mcp.Tool) (bool, string) {
+	if !s.Enabled {
+		return false, "server_disabled"
+	}
+	if !s.BatchReadEnabled {
+		return false, "connector_batch_disabled"
+	}
+	if s.BatchReadEndpoint != s.URL {
+		return false, "endpoint_changed"
+	}
+	if tool == nil {
+		return false, "catalog_unavailable"
+	}
+	if !s.Tools[tool.Name].Enabled {
+		return false, "tool_disabled"
+	}
+	return readpolicy.Classify(s.BatchReadProfile, tool)
 }
