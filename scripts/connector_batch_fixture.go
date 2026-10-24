@@ -1,7 +1,6 @@
 //go:build ignore
 
 // Synthetic local admin/MCP fixture. No real providers or credentials are used.
-//
 package main
 
 import (
@@ -11,6 +10,7 @@ import (
 	"fmt"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"mcp-gateway/internal/admin"
+	"mcp-gateway/internal/audit"
 	"mcp-gateway/internal/catalog"
 	"mcp-gateway/internal/config"
 	"mcp-gateway/internal/gateway"
@@ -55,7 +55,9 @@ func main() {
 	})
 	backend := httptest.NewServer(mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return s }, nil))
 	defer backend.Close()
-	cfg := &config.Config{Servers: map[string]config.Server{"homeassistant": {Enabled: true, URL: backend.URL, BatchReadProfile: "home-assistant-v1", Description: "Synthetic read fixture", Tools: map[string]config.Tool{}}}, Principals: map[string]config.Principal{"client": {TokenEnv: "CONNECTOR_FIXTURE_CLIENT", Grants: map[string]map[string]config.Grant{}}}}
+	cfg := &config.Config{RegistryVersion: 2,
+		Servers: map[string]config.Server{"homeassistant": {Enabled: true, URL: backend.URL, BatchReadProfile: "home-assistant-v1", Description: "Synthetic read fixture", Tools: map[string]config.Tool{}}}, Principals: map[string]config.Principal{"client": {ToolAllowlist: map[string][]string{}, AccessPolicy: "legacy_shared",
+			TokenEnv: "CONNECTOR_FIXTURE_CLIENT", Grants: map[string]map[string]config.Grant{}}}}
 	srv := cfg.Servers["homeassistant"]
 	for _, t := range readpolicy.ReviewedTools("home-assistant-v1") {
 		srv.Tools[t.Name] = config.Tool{Enabled: true, AccessMode: "shared"}
@@ -65,9 +67,13 @@ func main() {
 	if _, e = db.CompareAndSwap(ctx, 0, cfg, nil); e != nil {
 		panic(e)
 	}
+	auditSink, e := audit.FromEnv()
+	if e != nil {
+		panic(e)
+	}
 	cat := catalog.New()
 	defer cat.Close()
-	h, e := (&gateway.Gateway{Store: db, Catalog: cat, ReadBatch: gateway.NewReadBatchExecutor(&gateway.ReadBatchPolicy{Registry: true}), Timeout: time.Second}).Handler()
+	h, e := (&gateway.Gateway{Audit: auditSink, Store: db, Catalog: cat, ReadBatch: gateway.NewReadBatchExecutor(&gateway.ReadBatchPolicy{Registry: true}), Timeout: time.Second}).Handler()
 	if e != nil {
 		panic(e)
 	}
@@ -75,11 +81,26 @@ func main() {
 	defer web.Close()
 	aw := httptest.NewUnstartedServer(nil)
 	origin := "http://" + aw.Listener.Addr().String()
-	a, e := admin.New(db, admin.Options{Origin: origin, Token: "synthetic-connector-admin-token", Catalog: cat, BatchRegistry: true, MCPEndpoint: web.URL + "/mcp"})
+	options := admin.Options{Audit: auditSink, Origin: origin, Token: "synthetic-connector-admin-token", Catalog: cat, BatchRegistry: true, MCPEndpoint: web.URL + "/mcp"}
+	if os.Getenv("ACL_FIXTURE_AUTHENTIK") == "true" {
+		options.Token = ""
+		options.AuthMode = "authentik"
+		options.TrustedProxyCIDRs = []string{"127.0.0.1/32"}
+		options.AllowedUsers = []string{"synthetic-admin"}
+	}
+	a, e := admin.New(db, options)
 	if e != nil {
 		panic(e)
 	}
 	aw.Config.Handler = a
+	if options.AuthMode == "authentik" {
+		aw.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			r.Header.Del("X-authentik-username")
+			r.Header.Del("X-authentik-groups")
+			r.Header.Set("X-authentik-username", "synthetic-admin")
+			a.ServeHTTP(w, r)
+		})
+	}
 	aw.Start()
 	defer aw.Close()
 	json.NewEncoder(os.Stdout).Encode(map[string]any{"admin_origin": origin, "gateway_endpoint": web.URL + "/mcp", "admin_token": "synthetic-connector-admin-token", "registry_path": path})

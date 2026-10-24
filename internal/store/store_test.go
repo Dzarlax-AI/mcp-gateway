@@ -16,7 +16,9 @@ import (
 func fixture(t *testing.T) *config.Config {
 	t.Helper()
 	t.Setenv("STORE_CLIENT_TOKEN", "synthetic-client-token-123456")
-	return &config.Config{Servers: map[string]config.Server{"demo": {URL: "http://127.0.0.1:9876/mcp", Tools: map[string]config.Tool{"hello": {Enabled: true}}}}, Principals: map[string]config.Principal{"codex": {TokenEnv: "STORE_CLIENT_TOKEN", Grants: map[string]map[string]config.Grant{"demo": {"hello": {AllowedArguments: []string{"name"}, RequiredArguments: []string{"name"}, ArgumentEquals: map[string]any{"name": "test"}}}}}}}
+	return &config.Config{RegistryVersion: 2,
+		Servers: map[string]config.Server{"demo": {URL: "http://127.0.0.1:9876/mcp", Tools: map[string]config.Tool{"hello": {Enabled: true}}}}, Principals: map[string]config.Principal{"codex": {ToolAllowlist: map[string][]string{}, AccessPolicy: "legacy_shared",
+			TokenEnv: "STORE_CLIENT_TOKEN", Grants: map[string]map[string]config.Grant{"demo": {"hello": {AllowedArguments: []string{"name"}, RequiredArguments: []string{"name"}, ArgumentEquals: map[string]any{"name": "test"}}}}}}}
 }
 func TestContract(t *testing.T) {
 	t.Run("sqlite", func(t *testing.T) { contract(t, "sqlite", filepath.Join(t.TempDir(), "registry.db")) })
@@ -263,7 +265,8 @@ func contract(t *testing.T, kind, location string) {
 		t.Fatal(err)
 	}
 	managedToken := "mgw_abcdefghABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_"
-	keys.Principals["key_laptop"] = config.Principal{TokenHash: config.TokenDigest(managedToken), Key: &config.ClientKey{Name: "Laptop", Prefix: managedToken[:12], CreatedAt: "2026-10-12T12:00:00Z"}}
+	keys.Principals["key_laptop"] = config.Principal{ToolAllowlist: map[string][]string{}, AccessPolicy: "legacy_shared",
+		TokenHash: config.TokenDigest(managedToken), Key: &config.ClientKey{Name: "Laptop", Prefix: managedToken[:12], CreatedAt: "2026-10-12T12:00:00Z"}}
 	if _, err = s.CompareAndSwap(ctx, keySnapshot.Revision, keys, nil); err != nil {
 		t.Fatal(err)
 	}

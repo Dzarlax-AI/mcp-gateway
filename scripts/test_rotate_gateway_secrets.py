@@ -116,7 +116,7 @@ class PostgreSQLRehearsal(unittest.TestCase):
             def do_DELETE(self):self.send_response(200);self.end_headers()
         self.upstream=ThreadingHTTPServer(('127.0.0.1',0),Upstream);self.thread=threading.Thread(target=self.upstream.serve_forever,daemon=True);self.thread.start()
         url='http://127.0.0.1:'+str(self.upstream.server_port)
-        cfg={'servers':{s:{'url':url+path,'enabled':True,'token_ref':s,'tools':{'hello':{'enabled':True,'access_mode':'shared'}},**extra} for s,path,extra in [('demo','/a',{}),('second','/b',{'auth_header':'X-API-Key'})]},'principals':{'codex':{'token_env':'ROTATION_CLIENT_TOKEN'}}}
+        cfg={'registry_version':2,'servers':{s:{'url':url+path,'enabled':True,'token_ref':s,'tools':{'hello':{'enabled':True,'access_mode':'shared'}},**extra} for s,path,extra in [('demo','/a',{}),('second','/b',{'auth_header':'X-API-Key'})]},'principals':{'codex':{'token_env':'ROTATION_CLIENT_TOKEN','access_policy':'legacy_shared','tool_allowlist':{}}}}
         self.config=self.root/'fixture.json';op.write_private(self.config,json.dumps(cfg).encode())
         self.loc=self.root/'operator.url';op.write_private(self.loc,self.admin_url.encode())
         self.key=self.root/'old.key';op.write_private(self.key,self.old_key.encode())

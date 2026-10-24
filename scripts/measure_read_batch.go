@@ -65,7 +65,9 @@ func main() {
 	dir, err := os.MkdirTemp("", "read-batch-benchmark-")
 	must(err)
 	defer os.RemoveAll(dir)
-	cfg := config.Config{Servers: map[string]config.Server{"demo": {Description: "Synthetic independent read operations", URL: backend.URL + "/mcp", Enabled: true, Tools: map[string]config.Tool{}}}, Principals: map[string]config.Principal{"benchmark": {TokenEnv: "READ_BATCH_BENCH_TOKEN", Grants: map[string]map[string]config.Grant{}}}}
+	cfg := config.Config{RegistryVersion: 2,
+		Servers: map[string]config.Server{"demo": {Description: "Synthetic independent read operations", URL: backend.URL + "/mcp", Enabled: true, Tools: map[string]config.Tool{}}}, Principals: map[string]config.Principal{"benchmark": {ToolAllowlist: map[string][]string{}, AccessPolicy: "legacy_shared",
+			TokenEnv: "READ_BATCH_BENCH_TOKEN", Grants: map[string]map[string]config.Grant{}}}}
 	policyOps := []map[string]string{}
 	server := cfg.Servers["demo"]
 	for _, n := range names {

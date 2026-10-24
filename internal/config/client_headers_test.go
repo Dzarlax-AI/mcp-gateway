@@ -8,10 +8,13 @@ import (
 func TestClientCredentialHeaders(t *testing.T) {
 	token := "synthetic-client-token-123456"
 	t.Setenv("HEADER_CLIENT_TOKEN", token)
-	c := &Config{Principals: map[string]Principal{"env": {TokenEnv: "HEADER_CLIENT_TOKEN"}}}
+	c := &Config{RegistryVersion: 2,
+		Principals: map[string]Principal{"env": {ToolAllowlist: map[string][]string{}, AccessPolicy: "legacy_shared",
+			TokenEnv: "HEADER_CLIENT_TOKEN"}}}
 	for _, hashed := range []bool{false, true} {
 		if hashed {
-			c.Principals["env"] = Principal{TokenHash: TokenDigest(token)}
+			c.Principals["env"] = Principal{ToolAllowlist: map[string][]string{}, AccessPolicy: "legacy_shared",
+				TokenHash: TokenDigest(token)}
 		}
 		for _, headers := range []http.Header{
 			{"Authorization": {"Bearer " + token}},

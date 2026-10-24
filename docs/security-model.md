@@ -1,6 +1,6 @@
 # Security model
 
-The gateway is a privileged bridge to upstream tools. Every shared enabled tool is available to every valid client key. It is not a per-user permission system or an approval engine for destructive actions. Keep modifying tools disabled until their clients are trusted.
+The gateway is a privileged bridge to upstream tools. Restricted principals require exact server/tool ACL entries, current authentication, enabled global switches and input validation. Migrated legacy_shared principals retain old shared access until restricted. ACL is not an approval engine for destructive actions.
 
 ## Boundaries
 
@@ -18,11 +18,10 @@ The default-off `/mcp/oauth` route accepts signed Cloudflare Access application
 assertions and maps exact configured identities to existing gateway principals.
 It does not authenticate opaque forwarded OAuth bearer values as gateway keys.
 Native key authentication remains separate. OAuth inherits the principal's
-existing shared-tool/grant semantics; it does not add per-client ACL isolation.
+exact ACL or explicit legacy compatibility policy, including applicable legacy argument constraints.
 Multiple clients mapped to the same principal have the same effective rights.
 The route validates assertions on requests; deleting a principal denies later
-admissions. Already admitted ordinary operations may finish; batch admission
-also rechecks current access before dispatch. No instantaneous identity-provider
+admissions. Ordinary and batch calls recheck current access before dispatch; already dispatched operations may finish. No instantaneous identity-provider
 revocation guarantee is made for an otherwise valid assertion.
 
 See [the OAuth guide](deployment/chatgpt-oauth.md) for required settings,
@@ -40,3 +39,5 @@ Reverting a schema-v2 image alone is unsafe: old binaries expect schema v1. The 
 ## Reporting
 
 Do not put secrets or private production data in a public issue. Until a private vulnerability-reporting channel is enabled for the GitHub repository, contact the repository maintainer through a private channel you already have. No specific support SLA or security audit is claimed.
+
+See [Agent ACL](deployment/agent-acl.md) for required document migration, lifecycle invalidation, audit failure semantics and compatible rollback.

@@ -52,3 +52,7 @@ export regressions. Verify a real export with Go build/tests and Python tests
 from its output directory, so omitted embedded assets and helper dependencies
 cannot be masked by files in the original workspace. OAuth settings and a
 reviewable Compose example are in [the OAuth guide](deployment/chatgpt-oauth.md).
+
+## Agent permissions
+
+Registry document v2 requires explicit per-principal policy and exact tool ACL. New keys start restricted with no access. OAuth and native credentials resolve to the same policy evaluator. Existing installations require a reviewed explicit migration; see the [ACL runbook](deployment/agent-acl.md). Local audit is opt-in and has explicit degraded status.

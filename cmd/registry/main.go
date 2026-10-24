@@ -14,6 +14,9 @@ import (
 )
 
 func run(args []string) error {
+	if len(args) > 0 && args[0] == "migrate-agent-acl" {
+		return runAgentACL(args[1:])
+	}
 	if len(args) > 0 && args[0] == "rotate-secret-key" {
 		return runRotation(args[1:])
 	}
@@ -71,22 +74,7 @@ func run(args []string) error {
 		return s.DowngradeClientKeys(ctx)
 	}
 	if args[0] == "simplify" {
-		if *file != "" {
-			return fmt.Errorf("--file is only valid for import")
-		}
-		snap, err := s.ReadSnapshot(ctx)
-		if err != nil {
-			return err
-		}
-		c, err := config.Clone(snap.Config)
-		if err != nil {
-			return err
-		}
-		if !config.SimplifyAccess(c) {
-			return nil
-		}
-		_, err = s.CompareAndSwap(ctx, snap.Revision, c, nil)
-		return err
+		return fmt.Errorf("simplify is not supported for registry document v2")
 	}
 
 	if args[0] == "export" {

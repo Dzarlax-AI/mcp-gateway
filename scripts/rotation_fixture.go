@@ -64,8 +64,10 @@ func work() error {
 		if _, e = db.CompareAndSwap(ctx, 0, &c, map[string]*string{"demo": &a, "second": &btoken}); e != nil {
 			return fmt.Errorf("fixture seed failed")
 		}
-		c.Principals["recoverable"] = config.Principal{TokenHash: config.TokenDigest(token), Key: &config.ClientKey{Name: "Synthetic", Prefix: token[:12], CreatedAt: "2026-10-14T12:00:00Z", Recoverable: true}}
-		c.Principals["hashonly"] = config.Principal{TokenHash: config.TokenDigest(hash), Key: &config.ClientKey{Name: "Synthetic hash", Prefix: hash[:12], CreatedAt: "2026-10-14T12:00:00Z"}}
+		c.Principals["recoverable"] = config.Principal{ToolAllowlist: map[string][]string{}, AccessPolicy: "legacy_shared",
+			TokenHash: config.TokenDigest(token), Key: &config.ClientKey{Name: "Synthetic", Prefix: token[:12], CreatedAt: "2026-10-14T12:00:00Z", Recoverable: true}}
+		c.Principals["hashonly"] = config.Principal{ToolAllowlist: map[string][]string{}, AccessPolicy: "legacy_shared",
+			TokenHash: config.TokenDigest(hash), Key: &config.ClientKey{Name: "Synthetic hash", Prefix: hash[:12], CreatedAt: "2026-10-14T12:00:00Z"}}
 		if _, e = db.CompareAndSwapClientKeys(ctx, 1, &c, map[string]*string{"recoverable": &token}); e != nil {
 			return fmt.Errorf("fixture seed failed")
 		}

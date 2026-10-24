@@ -18,6 +18,16 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U postgres"
           --health-interval 5s --health-timeout 5s --health-retries 12
+      acl:
+        image: postgres:17.11-alpine
+        env:
+          POSTGRES_PASSWORD: synthetic-ci-postgres-password
+          POSTGRES_DB: acl_contract
+        ports:
+          - 5432/tcp
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 12
       clientkeys:
         image: postgres:17.11-alpine
         env:
@@ -81,6 +91,7 @@ jobs:
       - run: go vet ./...
       - run: go test -race ./...
         env:
+          TEST_ACL_POSTGRES_DSN: postgres://postgres:synthetic-ci-postgres-password@127.0.0.1:${{ job.services.acl.ports[5432] }}/acl_contract?sslmode=disable
           TEST_POSTGRES_DSN: postgres://postgres:synthetic-ci-postgres-password@127.0.0.1:${{ job.services.postgres.ports[5432] }}/store_contract?sslmode=disable
           TEST_CLIENT_KEYS_POSTGRES_DSN: postgres://postgres:synthetic-ci-postgres-password@127.0.0.1:${{ job.services.clientkeys.ports[5432] }}/client_key_contract?sslmode=disable
           TEST_CATALOG_POSTGRES_DSN: postgres://postgres:synthetic-ci-postgres-password@127.0.0.1:${{ job.services.catalog.ports[5432] }}/catalog_session?sslmode=disable
@@ -99,6 +110,7 @@ jobs:
           TEST_ROTATION_REHEARSAL_CONTAINER: ${{ job.services.rotation.id }}
       - run: python3 -m unittest discover -s scripts -p 'test_*.py'
       - run: node scripts/test_connection_actions.cjs
+      - run: node scripts/test_permission_actions.cjs
   image:
     name: Build and publish container image
     needs: test

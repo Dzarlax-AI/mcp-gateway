@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"mcp-gateway/internal/audit"
 	"mcp-gateway/internal/catalog"
 	"mcp-gateway/internal/config"
 	"mcp-gateway/internal/readpolicy"
@@ -29,6 +30,7 @@ var errInput = errors.New("invalid input")
 var identifier = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127}$`)
 
 type Options struct {
+	Audit             *audit.Sink
 	BatchRegistry     bool
 	Catalog           *catalog.Provider
 	MCPEndpoint       string
@@ -48,6 +50,7 @@ type probe struct {
 	failed   bool
 }
 type handler struct {
+	audit         *audit.Sink
 	batchRegistry bool
 	catalog       *catalog.Provider
 	s             store.Store
@@ -94,7 +97,7 @@ func New(s store.Store, o Options) (http.Handler, error) {
 			return nil, errInput
 		}
 	}
-	return &handler{batchRegistry: o.BatchRegistry, s: s, a: a, catalog: o.Catalog, probes: map[string]probe{}, mcpEndpoint: o.MCPEndpoint, connectionTpl: template.Must(template.New("connection").Parse(connectionTemplate)), tpl: template.Must(template.New("page").Parse(strings.ReplaceAll(pageTemplate, `"/admin`, `"{{$.BasePath}}/admin`)))}, nil
+	return &handler{audit: o.Audit, batchRegistry: o.BatchRegistry, s: s, a: a, catalog: o.Catalog, probes: map[string]probe{}, mcpEndpoint: o.MCPEndpoint, connectionTpl: template.Must(template.New("connection").Parse(connectionTemplate)), tpl: template.Must(template.New("page").Parse(strings.ReplaceAll(pageTemplate, `"/admin`, `"{{$.BasePath}}/admin`)))}, nil
 }
 func equal(a, b string) bool { return b != "" && subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1 }
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -192,11 +195,17 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(actionsJS))
 		return
 	}
+	if r.Method == "GET" && r.URL.Path == "/admin/permissions.js" {
+		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+		_, _ = w.Write([]byte(permissionsJS))
+		return
+	}
 	if r.Method == "GET" && r.URL.Path == "/admin/connection.js" {
 		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
 		_, _ = w.Write([]byte(connectionJS))
 		return
 	}
+	w.Header().Set("X-Gateway-Audit-Status", h.audit.State())
 	snap, e := h.s.ReadSnapshot(r.Context())
 	if e != nil {
 		http.Error(w, "Registry unavailable", 503)
@@ -312,6 +321,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				h.inputError(w, r, snap, sess.csrf, user, "Enable the connector and at least one verified read tool before enabling batch.", 400)
 				return
 			}
+			reconcileCatalogACL(c, id, &server, p.tools)
 			server.BatchReadEnabled = true
 			server.BatchReadEndpoint = server.URL
 			c.Servers[id] = server
@@ -355,18 +365,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				}
 				freshCheck = true
 			}
-			// Refresh the catalog without granting newly discovered tools.
-			for name := range p.tools {
-				if _, exists := server.Tools[name]; !exists {
-					server.Tools[name] = config.Tool{AccessMode: "shared"}
-				}
-			}
-			for name, tool := range server.Tools {
-				if p.tools[name] == nil {
-					tool.Enabled = false
-					server.Tools[name] = tool
-				}
-			}
+			reconcileCatalogACL(c, id, &server, p.tools)
 			if parts[1] == "enable" {
 				server.Enabled = true
 			}
@@ -376,8 +375,9 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					e = errInput
 					break
 				}
-				server.Tools[name] = config.Tool{Enabled: true, AccessMode: "shared"}
-				clearToolGrants(c, id, name)
+				tool := server.Tools[name]
+				tool.Enabled = true
+				server.Tools[name] = tool
 			}
 			c.Servers[id] = server
 			nextProbe = &p
@@ -422,13 +422,16 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	saved, e := h.s.CompareAndSwap(r.Context(), rev, c, secrets)
 	if errors.Is(e, store.ErrConflict) {
+		h.auditMutation(w, snap, snap, user, "server_change", "", "conflict")
 		http.Error(w, "Registry changed. Reload before saving.", 409)
 		return
 	}
 	if e != nil {
-		http.Error(w, "Changes were not saved", 503)
+		h.auditMutation(w, snap, snap, user, "server_change", "", "unknown")
+		http.Error(w, "Change could not be confirmed. Reload before retrying.", 503)
 		return
 	}
+	h.auditMutation(w, snap, saved, user, "server_change", "", "committed")
 	h.updateCatalog(snap, saved, id, nextProbe, freshCheck)
 	h.mu.Lock()
 	delete(h.probes, id)
@@ -464,6 +467,10 @@ func csv(s string) []string {
 	return out
 }
 func clearGrants(c *config.Config, id string) {
+	for pid, p := range c.Principals {
+		delete(p.ToolAllowlist, id)
+		c.Principals[pid] = p
+	}
 	for pid, p := range c.Principals {
 		delete(p.Grants, id)
 		c.Principals[pid] = p
@@ -752,9 +759,10 @@ func (h *handler) actionState(w http.ResponseWriter, s store.Snapshot) {
 		BatchCount    int        `json:"batch_count"`
 	}
 	out := struct {
+		Audit    string        `json:"audit_status"`
 		Revision int64         `json:"revision"`
 		Servers  []serverState `json:"servers"`
-	}{Revision: s.Revision, Servers: []serverState{}}
+	}{Audit: h.audit.State(), Revision: s.Revision, Servers: []serverState{}}
 	for _, v := range h.view(s, "").Servers {
 		if v.Tools == nil {
 			v.Tools = []toolView{}
@@ -763,4 +771,38 @@ func (h *handler) actionState(w http.ResponseWriter, s store.Snapshot) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(out)
+}
+
+func clearToolACL(c *config.Config, id, name string) {
+	for pid, p := range c.Principals {
+		names := p.ToolAllowlist[id]
+		kept := make([]string, 0, len(names))
+		for _, v := range names {
+			if v != name {
+				kept = append(kept, v)
+			}
+		}
+		if len(kept) == 0 {
+			delete(p.ToolAllowlist, id)
+		} else {
+			p.ToolAllowlist[id] = kept
+		}
+		c.Principals[pid] = p
+	}
+}
+
+// Every successful admin probe publication uses the same lifecycle invalidation.
+func reconcileCatalogACL(c *config.Config, id string, server *config.Server, tools map[string]*mcp.Tool) {
+	for name := range tools {
+		if _, exists := server.Tools[name]; !exists {
+			server.Tools[name] = config.Tool{AccessMode: "shared"}
+		}
+	}
+	for name, tool := range server.Tools {
+		if tools[name] == nil {
+			tool.Enabled = false
+			clearToolACL(c, id, name)
+			server.Tools[name] = tool
+		}
+	}
 }

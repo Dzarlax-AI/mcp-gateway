@@ -2,11 +2,18 @@
   "servers": {
     "demo": {
       "description": "Synthetic echo server; no real data or side effects",
-      "keywords": ["echo", "test"],
+      "keywords": [
+        "echo",
+        "test"
+      ],
       "url": "http://127.0.0.1:8081/mcp",
       "token_env": "DEMO_UPSTREAM_TOKEN",
       "enabled": true,
-      "tools": {"echo": {"enabled": true}}
+      "tools": {
+        "echo": {
+          "enabled": true
+        }
+      }
     }
   },
   "principals": {
@@ -15,12 +22,23 @@
       "grants": {
         "demo": {
           "echo": {
-            "allowed_arguments": ["text"],
-            "required_arguments": ["text"],
+            "allowed_arguments": [
+              "text"
+            ],
+            "required_arguments": [
+              "text"
+            ],
             "argument_equals": {}
           }
         }
+      },
+      "access_policy": "restricted",
+      "tool_allowlist": {
+        "demo": [
+          "echo"
+        ]
       }
     }
-  }
+  },
+  "registry_version": 2
 }
