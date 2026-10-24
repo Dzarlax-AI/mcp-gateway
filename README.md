@@ -126,6 +126,27 @@ For **Claude Code**, use [the connection guide](docs/claude.md) and
 Bearer or `X-API-Key` with an environment variable for the key. The root
 `CLAUDE.md` imports the shared `AGENTS.md` contributor instructions.
 
+### Optional Cloudflare Managed OAuth
+
+The gateway can expose a separate `/gateway/mcp/oauth` endpoint for a
+Cloudflare Access Managed OAuth application. The native `/gateway/mcp` key
+endpoint remains independent and works when OAuth is disabled or Access JWKS
+is unavailable. Configure the MCP-specific Access application and the exact
+client redirect URI separately; browser-only Access authentication is not
+sufficient. The origin requires one signed `Cf-Access-Jwt-Assertion`, verifies
+its RS256 signature, issuer, MCP audience, `type=app`, subject, email, `iat`,
+and `exp`, then maps the exact email to an existing gateway principal. Current
+principal and grants are checked for each operation. Opaque `Bearer oauth:…`
+transport values are never treated as native API keys.
+
+The profile is off by default. Enabling it requires the enable flag, the three
+remaining `GATEWAY_MCP_ACCESS_*` settings and `GATEWAY_PUBLIC_ORIGIN`.
+Partial or malformed configuration stops
+startup. See [ChatGPT OAuth deployment guidance](docs/deployment/chatgpt-oauth.md)
+for configuration, the prepared Traefik overlay, validation, and rollback.
+Local synthetic tests do not establish that a real Cloudflare or ChatGPT
+connection works.
+
 ## Gateway tools
 
 | Tool | Input | Purpose |

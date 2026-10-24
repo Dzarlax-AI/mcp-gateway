@@ -41,6 +41,33 @@ func TestListenRequiresExplicitPublicOrigin(t *testing.T) {
 	}
 }
 
+func TestAccessOAuthEnvironmentValidation(t *testing.T) {
+	for _, name := range []string{"GATEWAY_MCP_ACCESS_ENABLED", "GATEWAY_MCP_ACCESS_ISSUER", "GATEWAY_MCP_ACCESS_AUD", "GATEWAY_MCP_ACCESS_USER_MAP"} {
+		t.Setenv(name, "")
+	}
+	if v, err := accessOAuthOptions(""); err != nil || v != nil {
+		t.Fatalf("default profile should be off: %v %v", v, err)
+	}
+	t.Setenv("GATEWAY_MCP_ACCESS_ISSUER", "https://issuer.example.org")
+	if _, err := accessOAuthOptions(""); err == nil {
+		t.Fatal("settings accepted while profile is disabled")
+	}
+	t.Setenv("GATEWAY_MCP_ACCESS_ENABLED", "true")
+	t.Setenv("GATEWAY_MCP_ACCESS_AUD", "synthetic-audience")
+	t.Setenv("GATEWAY_MCP_ACCESS_USER_MAP", `{"alice@example.net":"principal-a"}`)
+	if _, err := accessOAuthOptions(""); err == nil {
+		t.Fatal("enabled profile accepted without public origin")
+	}
+	v, err := accessOAuthOptions("https://gateway.example.org")
+	if err != nil || v == nil {
+		t.Fatalf("valid synthetic settings rejected: %v", err)
+	}
+	t.Setenv("GATEWAY_MCP_ACCESS_USER_MAP", `{"alice@example.net":"a","alice@example.net":"b"}`)
+	if _, err := accessOAuthOptions("https://gateway.example.org"); err == nil {
+		t.Fatal("duplicate user-map key accepted")
+	}
+}
+
 func TestHealthcheck(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/healthz" || r.Header.Get("Authorization") != "" {

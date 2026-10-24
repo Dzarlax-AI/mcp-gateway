@@ -334,7 +334,7 @@ func readBatchAdmit(ctx context.Context, g *Gateway, p *ReadBatchPolicy, headers
 	if err != nil {
 		return snapshot, "", catalog.Connection{}, err
 	}
-	principal, err := snapshot.Config.AuthenticateHeaders(headers)
+	principal, err := resolvePrincipal(ctx, snapshot.Config, headers)
 	if err != nil {
 		return snapshot, "", catalog.Connection{}, readBatchDenied
 	}
