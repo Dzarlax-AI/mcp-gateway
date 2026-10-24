@@ -36,3 +36,15 @@ Server instructions prefer direct known invocations and one search for unknown u
 - Optional PostgreSQL role/password rotation shares that transaction, requires privileged maintenance access, client-side SCRAM verifier and transaction-local sensitive-statement logging protection; detected pgaudit is refused. Do not broaden runtime privileges.
 - `scripts/rotate_gateway_secrets.py prepare|apply` uses private input files and a private phase journal, seals a schema/env/old-key recovery bundle under an independent key, verifies new physical runtime login, then fsync/rename installs env. Quiescence is an explicit operator assertion; no service/SSH actions are automatic.
 - Local synthetic implementation and rehearsal only. Production env/password/ciphertext, Git commit/push, CI publication and deployment remain unmodified and separately authorized. See docs/deployment/secret-rotation.md and docs/ai-plans/2026-10-14-gateway-secret-rotation.html.
+
+
+## Working repository and export
+- Edit this permanent Git checkout; root `AGENTS.md` and `.gitignore` are authoritative. Historical `docs/repository/` templates are not export inputs.
+- `python3 scripts/prepare_github.py --output <new-directory>` creates a reviewed allowlist export with a checksum manifest and performs no Git or deployment actions.
+- Preserve embedded JSON contracts and reviewed scripts when extending the export. Test real output builds and deterministic re-export; never treat export omissions as instructions to delete checkout files.
+- Keep private operator files, approval plans, credentials and receipts outside Git. Ignore rules do not remove already tracked files or history. Local operator context may be referenced from ignored `docs/local/`.
+
+## Optional MCP Access OAuth
+- `GATEWAY_MCP_ACCESS_ENABLED` defaults false. Enabling requires `GATEWAY_PUBLIC_ORIGIN`, `GATEWAY_MCP_ACCESS_ISSUER`, `GATEWAY_MCP_ACCESS_AUD` and strict `GATEWAY_MCP_ACCESS_USER_MAP`.
+- `/mcp/oauth` verifies signed Access assertions and maps exact identities to existing principals. Native `/mcp` key authentication remains independent; no fallback from invalid assertions to native keys.
+- Synthetic tests are in `internal/accessauth` and `internal/gateway/access_oauth_test.go`. Public setup guidance and a variable-only Compose example are linked from `docs/deployment/chatgpt-oauth.md`; actual provider/client settings and deployment state require separate verification and authorization.

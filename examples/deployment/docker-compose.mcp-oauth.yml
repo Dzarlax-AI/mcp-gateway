@@ -1,0 +1,20 @@
+# Example overlay, not a complete deployment. Review router and middleware
+# names against your base Compose file. Cloudflare Access is configured separately.
+services:
+  mcp-gateway:
+    environment:
+      GATEWAY_PUBLIC_ORIGIN: https://${GATEWAY_OAUTH_HOST:?Set the existing public gateway host}
+      GATEWAY_MCP_ACCESS_ENABLED: "true"
+      GATEWAY_MCP_ACCESS_ISSUER: ${GATEWAY_MCP_ACCESS_ISSUER:?Set the Cloudflare Access team issuer}
+      GATEWAY_MCP_ACCESS_AUD: ${GATEWAY_MCP_ACCESS_AUD:?Set the MCP-specific Access application AUD}
+      GATEWAY_MCP_ACCESS_USER_MAP: ${GATEWAY_MCP_ACCESS_USER_MAP:?Set exact email-to-existing-principal JSON}
+    labels:
+      traefik.http.routers.mcp-gateway-oauth.entrypoints: https
+      traefik.http.routers.mcp-gateway-oauth.rule: "Host(`${GATEWAY_OAUTH_HOST:?Set the existing public gateway host}`) && Path(`/gateway/mcp/oauth`)"
+      traefik.http.routers.mcp-gateway-oauth.priority: "510"
+      traefik.http.routers.mcp-gateway-oauth.tls: "true"
+      traefik.http.routers.mcp-gateway-oauth.tls.certresolver: letsEncrypt
+      traefik.http.routers.mcp-gateway-oauth.service: mcp-gateway
+      traefik.http.routers.mcp-gateway-oauth.middlewares: gateway-rate,gateway-inflight,gateway-body,gateway-strip
+      traefik.http.services.mcp-gateway.loadbalancer.server.port: "8080"
+      traefik.http.services.mcp-gateway.loadbalancer.passhostheader: "true"

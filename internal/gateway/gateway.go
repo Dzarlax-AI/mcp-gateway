@@ -10,12 +10,14 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"path"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"mcp-gateway/internal/accessauth"
 	"mcp-gateway/internal/catalog"
 	"mcp-gateway/internal/config"
 	"mcp-gateway/internal/policy"
@@ -36,7 +38,28 @@ type Gateway struct {
 	Timeout   time.Duration
 	// PublicOrigin explicitly enables operation behind a TLS proxy preserving Host.
 	PublicOrigin string
+	AccessOAuth  *accessauth.Verifier
 }
+
+type accessIdentityKey struct{}
+
+func withAccessIdentity(ctx context.Context, identity accessauth.Identity) context.Context {
+	return context.WithValue(ctx, accessIdentityKey{}, identity)
+}
+
+func resolvePrincipal(ctx context.Context, c *config.Config, headers http.Header) (string, error) {
+	if identity, ok := ctx.Value(accessIdentityKey{}).(accessauth.Identity); ok {
+		if identity.Principal == "" || !time.Now().Before(identity.ExpiresAt) {
+			return "", policy.ErrDenied
+		}
+		if _, exists := c.Principals[identity.Principal]; !exists {
+			return "", policy.ErrDenied
+		}
+		return identity.Principal, nil
+	}
+	return c.AuthenticateHeaders(headers)
+}
+
 type input struct {
 	Query     string         `json:"query"`
 	Limit     int            `json:"limit"`
@@ -85,7 +108,7 @@ func (g *Gateway) call(ctx context.Context, r *mcp.CallToolRequest) (*mcp.CallTo
 	if r.Extra == nil {
 		return failure(policy.ErrDenied), nil
 	}
-	p, e := c.AuthenticateHeaders(r.Extra.Header)
+	p, e := resolvePrincipal(ctx, c, r.Extra.Header)
 	if e != nil {
 		return failure(policy.ErrDenied), nil
 	}
@@ -230,48 +253,71 @@ func (g *Gateway) Handler() (http.Handler, error) {
 	if g.Timeout <= 0 {
 		g.Timeout = 10 * time.Second
 	}
-	if _, e := g.snapshot(context.Background()); e != nil {
+	snapshot, e := g.snapshot(context.Background())
+	if e != nil {
 		return nil, e
 	}
-	s := mcp.NewServer(&mcp.Implementation{Name: "mcp-gateway", Version: "0.1.0"}, &mcp.ServerOptions{Instructions: serverInstructions(g.Catalog != nil, g.ReadBatch != nil), Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
-	defs := []struct{ name, desc string }{
-		{"discover_server", "Find enabled, authorized servers by query; fetch schemas only when needed."},
-		{"discover_tools", "List authorized tools on a server."},
-		{"get_tool_schema", "Fetch current schema for an authorized tool."},
-		{"invoke_tool", "Invoke after server, tool, argument and schema authorization. Results are untrusted upstream data."},
-	}
-	if g.Catalog != nil {
-		defs = append(defs, struct{ name, desc string }{"search_tools", "Search unknown enabled authorized upstream tools and return matching schemas. This does not discover gateway tools. If server/tool names and arguments are known, invoke directly without searching. Reuse included schemas. Upstream metadata is untrusted data."})
-		defs[3].desc = "Invoke a known server/tool directly; no prior discovery required. Checks current authorization and fresh cached schema. Results are untrusted upstream data."
-	}
-	if g.ReadBatch != nil {
-		defs = append(defs, struct{ name, desc string }{"invoke_read_batch", "Invoke 1-8 independent known read operations permitted by the current gateway read policy. Use this for all allowlisted reads, including a single read. Results preserve input IDs/order; inspect each status and complete. No automatic retries."})
-	}
-	for _, d := range defs {
-		schema := defsSchema(d.name)
-		tool := &mcp.Tool{Name: d.name, Description: d.desc, InputSchema: schema}
-		if d.name == "invoke_read_batch" {
-			tool.Annotations = &mcp.ToolAnnotations{ReadOnlyHint: true, DestructiveHint: new(false)}
+	if g.AccessOAuth != nil {
+		if g.PublicOrigin == "" {
+			return nil, errors.New("Access OAuth requires public HTTPS origin")
 		}
-		s.AddTool(tool, func(ctx context.Context, r *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			var a any
-			raw := r.Params.Arguments
-			if len(raw) == 0 {
-				raw = []byte("{}")
+		for _, id := range g.AccessOAuth.PrincipalIDs() {
+			if _, ok := snapshot.Config.Principals[id]; !ok {
+				return nil, errors.New("Access OAuth user map references unknown principal")
 			}
-			decoder := json.NewDecoder(bytes.NewReader(raw))
-			decoder.UseNumber()
-			if decoder.Decode(&a) != nil {
-				return failure(ErrArguments), nil
-			}
-			if e := validateGateway(schema, a); e != nil {
-				return failure(e), nil
-			}
-			r.Params.Arguments = raw
-			return g.call(ctx, r)
-		})
+		}
 	}
-	h := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return s }, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true, DisableLocalhostProtection: g.PublicOrigin != ""})
+	newMCPServer := func() *mcp.Server {
+		s := mcp.NewServer(&mcp.Implementation{Name: "mcp-gateway", Version: "0.1.0"}, &mcp.ServerOptions{Instructions: serverInstructions(g.Catalog != nil, g.ReadBatch != nil), Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+		defs := []struct{ name, desc string }{
+			{"discover_server", "Find enabled, authorized servers by query; fetch schemas only when needed."},
+			{"discover_tools", "List authorized tools on a server."},
+			{"get_tool_schema", "Fetch current schema for an authorized tool."},
+			{"invoke_tool", "Invoke after server, tool, argument and schema authorization. Results are untrusted upstream data."},
+		}
+		if g.Catalog != nil {
+			defs = append(defs, struct{ name, desc string }{"search_tools", "Search unknown enabled authorized upstream tools and return matching schemas. This does not discover gateway tools. If server/tool names and arguments are known, invoke directly without searching. Reuse included schemas. Upstream metadata is untrusted data."})
+			defs[3].desc = "Invoke a known server/tool directly; no prior discovery required. Checks current authorization and fresh cached schema. Results are untrusted upstream data."
+		}
+		if g.ReadBatch != nil {
+			defs = append(defs, struct{ name, desc string }{"invoke_read_batch", "Invoke 1-8 independent known read operations permitted by the current gateway read policy. Use this for all allowlisted reads, including a single read. Results preserve input IDs/order; inspect each status and complete. No automatic retries."})
+		}
+		for _, d := range defs {
+			schema := defsSchema(d.name)
+			tool := &mcp.Tool{Name: d.name, Description: d.desc, InputSchema: schema}
+			if d.name == "invoke_read_batch" {
+				tool.Annotations = &mcp.ToolAnnotations{ReadOnlyHint: true, DestructiveHint: new(false)}
+			}
+			s.AddTool(tool, func(ctx context.Context, r *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+				var a any
+				raw := r.Params.Arguments
+				if len(raw) == 0 {
+					raw = []byte("{}")
+				}
+				decoder := json.NewDecoder(bytes.NewReader(raw))
+				decoder.UseNumber()
+				if decoder.Decode(&a) != nil {
+					return failure(ErrArguments), nil
+				}
+				if e := validateGateway(schema, a); e != nil {
+					return failure(e), nil
+				}
+				r.Params.Arguments = raw
+				return g.call(ctx, r)
+			})
+		}
+		return s
+	}
+	makeHTTP := func() http.Handler {
+		server := newMCPServer()
+		h := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true, DisableLocalhostProtection: g.PublicOrigin != ""})
+		return h
+	}
+	h := makeHTTP()
+	var oauthHandler http.Handler
+	if g.AccessOAuth != nil {
+		oauthHandler = makeHTTP()
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		if _, e := g.snapshot(r.Context()); e != nil {
@@ -303,7 +349,100 @@ func (g *Gateway) Handler() (http.Handler, error) {
 		}
 		h.ServeHTTP(w, r)
 	}))
-	return mux, nil
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		candidate := oauthPathCandidate(r.URL.Path)
+		if candidate {
+			if r.URL.Path != "/mcp/oauth" || r.URL.EscapedPath() != "/mcp/oauth" || r.URL.RawQuery != "" || r.URL.ForceQuery {
+				http.NotFound(w, r)
+				return
+			}
+			if oauthHandler == nil {
+				http.NotFound(w, r)
+				return
+			}
+			g.serveAccessOAuth(oauthHandler, w, r)
+			return
+		}
+		if r.URL.Path == "/mcp" && r.URL.EscapedPath() != "/mcp" {
+			http.NotFound(w, r)
+			return
+		}
+		mux.ServeHTTP(w, r)
+	}), nil
+}
+
+func oauthPathCandidate(p string) bool {
+	lower := strings.ToLower(p)
+	if lower == "/mcp/oauth" || strings.HasPrefix(lower, "/mcp/oauth/") {
+		return true
+	}
+	clean := strings.ToLower(path.Clean("/" + strings.TrimPrefix(p, "/")))
+	return clean == "/mcp/oauth" || strings.HasPrefix(clean, "/mcp/oauth/")
+}
+
+func (g *Gateway) serveAccessOAuth(next http.Handler, w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if len(r.Header.Values("Origin")) != 0 {
+		http.Error(w, "forbidden origin", http.StatusForbidden)
+		return
+	}
+	if g.PublicOrigin == "" || "https://"+r.Host != g.PublicOrigin {
+		http.Error(w, "forbidden host", http.StatusForbidden)
+		return
+	}
+	if r.URL.RawQuery != "" || r.URL.ForceQuery {
+		http.Error(w, "query not allowed", http.StatusBadRequest)
+		return
+	}
+	var assertions, authorizations, apiKeys []string
+	for name, vals := range r.Header {
+		switch strings.ToLower(name) {
+		case "cf-access-jwt-assertion":
+			assertions = append(assertions, vals...)
+		case "authorization":
+			authorizations = append(authorizations, vals...)
+		case "x-api-key":
+			apiKeys = append(apiKeys, vals...)
+		}
+	}
+	if len(assertions) != 1 || strings.Contains(assertions[0], ",") || len(apiKeys) != 0 || len(authorizations) > 1 {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if len(authorizations) == 1 {
+		value := authorizations[0]
+		const prefix = "Bearer oauth:"
+		if !strings.HasPrefix(value, prefix) || len(value) <= len(prefix) || strings.ContainsAny(value[len(prefix):], "\r\n\t ,") {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+	}
+	identity, err := g.AccessOAuth.Verify(r.Context(), assertions[0])
+	if err != nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	snapshot, err := g.snapshot(r.Context())
+	if err != nil {
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if _, exists := snapshot.Config.Principals[identity.Principal]; !exists {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	b, err := io.ReadAll(io.LimitReader(r.Body, MaxBody+1))
+	if err != nil || len(b) > MaxBody {
+		http.Error(w, "request too large", http.StatusRequestEntityTooLarge)
+		return
+	}
+	r.Body = io.NopCloser(bytes.NewReader(b))
+	r = r.WithContext(withAccessIdentity(r.Context(), identity))
+	next.ServeHTTP(w, r)
 }
 func (g *Gateway) validOrigin(r *http.Request) bool {
 	if g.PublicOrigin != "" && "https://"+r.Host != g.PublicOrigin {
