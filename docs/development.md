@@ -23,4 +23,32 @@ be private before updating `latest`; no deployment is performed. Private pulls
 require GHCR authentication with package read access. Pin a commit tag or image
 digest when deploying rather than relying on the moving `latest` tag.
 
-Before publication, run `python3 scripts/prepare_github.py --output /tmp/mcp-gateway-github` to produce an explicit allowlist export and checksum manifest. The export preserves runtime source bytes; it does not initialize Git, create a remote, commit or push. Local deployment records and machine-specific instructions remain in the working directory.
+## Working repository and publication exports
+
+Use the permanent Git checkout for source changes, reviews and future commits.
+Keep operator credentials and deployment history outside Git; a legacy source
+workspace or `docs/local/` can retain private context. The root `AGENTS.md` and
+`.gitignore` are authoritative. Historical files under `docs/repository/` are
+legacy templates; the exporter does not map them over the root files.
+Git ignore rules do not untrack files already committed or remove old history.
+
+Run `python3 scripts/prepare_github.py --output /tmp/mcp-gateway-github` with a
+fresh output path to produce a reviewed allowlist export and `PUBLICATION.json`
+checksums. It includes Go/embedded JavaScript sources, explicitly reviewed JSON
+contracts, test/rotation helpers, public guides and the variable-only OAuth
+Compose example. New non-Go/JavaScript runtime assets or scripts must be added
+to the allowlist explicitly; do not export every tracked or untracked file.
+
+The exporter preserves bytes and current root instructions, refuses missing
+required inputs, symlinks, known private-path/key markers and output overwrites,
+and validates inputs before creating the output. It is not a general secret
+scanner: review newly included files and the complete diff before publication.
+It never initializes Git, commits, pushes or applies deployment settings.
+An export is a disposable verification artifact, not the working repository or
+a deletion manifest. It must be able to re-export itself with identical bytes.
+
+Run `python3 -m unittest discover -s scripts -p 'test_prepare_github.py'` for
+export regressions. Verify a real export with Go build/tests and Python tests
+from its output directory, so omitted embedded assets and helper dependencies
+cannot be masked by files in the original workspace. OAuth settings and a
+reviewable Compose example are in [the OAuth guide](deployment/chatgpt-oauth.md).

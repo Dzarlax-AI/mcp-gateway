@@ -1,73 +1,107 @@
 #!/usr/bin/env python3
-"""Export an explicit publication allowlist; never copy local deployment state."""
+"""Export reviewed publication inputs without local deployment state or Git actions."""
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import shutil
 
 ROOT = Path(__file__).resolve().parent.parent
+# Root instructions are authoritative. Historical docs/repository templates are
+# not inputs: mapping them onto root files would discard newer instructions.
 FILES = [
-    'README.md', 'Dockerfile', '.dockerignore', 'go.mod', 'go.sum',
-    'CONTRIBUTING.md', 'SECURITY.md', 'CLAUDE.md', '.github/workflows/ci.yml',
+    'AGENTS.md', '.gitignore', 'README.md', 'Dockerfile', '.dockerignore',
+    'go.mod', 'go.sum', 'CONTRIBUTING.md', 'SECURITY.md', 'CLAUDE.md',
+    '.github/workflows/ci.yml',
     'config/example.json', 'config/bootstrap.json', 'config/codex-local.json',
-    'config/read-batch.example.json', 'scripts/measure_read_batch.go',
+    'config/read-batch.example.json', 'config/claude-mcp.json.example',
     'docs/self-hosting.md', 'docs/development.md', 'docs/security-model.md',
-    'docs/claude.md', 'config/claude-mcp.json.example',
-    'docs/repository/AGENTS.public.md', 'docs/repository/gitignore.public',
+    'docs/claude.md', 'docs/deployment/connector-batch-reading.md',
+    'docs/deployment/secret-rotation.md', 'docs/deployment/chatgpt-oauth.md',
+    'examples/deployment/docker-compose.mcp-oauth.yml',
+    'internal/readpolicy/contracts/README.md',
+    'internal/readpolicy/contracts/calendar-mcp-v1.json',
+    'internal/readpolicy/contracts/home-assistant-review.json',
+    'internal/readpolicy/contracts/home-assistant-v1.json',
     'scripts/codex_headers.py', 'scripts/codex_public_headers.py',
     'scripts/test_codex_public_headers.py', 'scripts/test_connection_actions.cjs',
-    'scripts/prepare_github.py',
+    'scripts/measure_read_batch.go', 'scripts/connector_batch_fixture.go',
+    'scripts/rotation_fixture.go', 'scripts/rotate_gateway_secrets.py',
+    'scripts/test_rotate_gateway_secrets.py',
+    'scripts/test_connector_batch_admin.cjs',
+    'scripts/verify_connector_batch_agent.py',
+    'scripts/prepare_github.py', 'scripts/test_prepare_github.py',
 ]
-MAPPINGS = {'docs/repository/AGENTS.public.md': 'AGENTS.md',
-            'docs/repository/gitignore.public': '.gitignore'}
-PRIVATE = re.compile(r'/Users/[^/]+/(?:Projects|Documents)/|BEGIN (?:RSA |OPENSSH |EC )?PRIVATE KEY')
+PRIVATE = re.compile(
+    r'/Users/[^/]+/(?:Projects|Documents)/|'
+    r'-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----'
+)
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--output', type=Path, required=True)
-    args = parser.parse_args()
-    output = args.output.expanduser().resolve()
-    if output == ROOT or ROOT in output.parents or output in ROOT.parents:
-        parser.error('output must be outside the working tree and its ancestors')
-    if output.exists():
-        parser.error('output already exists; choose a new directory to avoid overwriting work')
+class ExportError(ValueError):
+    pass
+
+
+def export(root, output):
+    root = Path(root).resolve()
+    requested = Path(output).expanduser()
+    if os.path.lexists(requested):
+        raise ExportError('output already exists; choose a new directory')
+    output = requested.resolve()
+    if output == root or root in output.parents or output in root.parents:
+        raise ExportError('output must be outside the working tree and its ancestors')
     files = list(FILES)
-    files += [p.relative_to(ROOT).as_posix() for directory in ('cmd', 'internal')
-              for p in (ROOT / directory).rglob('*')
-              if p.is_file() and p.suffix in ('.go', '.js')]
-    if (ROOT / 'LICENSE').is_file():
+    files += [p.relative_to(root).as_posix() for directory in ('cmd', 'internal')
+              for p in (root / directory).rglob('*')
+              if (p.is_file() or p.is_symlink()) and p.suffix in ('.go', '.js')]
+    if os.path.lexists(root / 'LICENSE'):
         files.append('LICENSE')
     contents = {}
     for name in sorted(set(files)):
-        source = ROOT / name
-        if source.is_symlink() or not source.is_file():
-            parser.error('invalid publication input: ' + name)
+        source = root / name
+        # Refuse symlinked directories as well as symlinked leaf files.
+        parts = [root.joinpath(*Path(name).parts[:i])
+                 for i in range(1, len(Path(name).parts) + 1)]
+        if any(p.is_symlink() for p in parts) or not source.is_file():
+            raise ExportError('invalid publication input: ' + name)
         data = source.read_bytes()
-        if PRIVATE.search(data.decode('utf-8')):
-            parser.error('private deployment detail found in: ' + name)
+        try:
+            text = data.decode('utf-8')
+        except UnicodeDecodeError:
+            raise ExportError('non-UTF-8 publication input: ' + name) from None
+        if PRIVATE.search(text):
+            raise ExportError('private deployment detail found in: ' + name)
         contents[name] = data
-    # Validate before creating anything. Include public instruction sources so the
-    # exported repository can run the same exporter again without local context.
+    # Validate the entire input set before creating output. Unknown local files
+    # and operational directories are never copied by a broad tree sync.
     output.mkdir(mode=0o755)
     for name, data in contents.items():
         target = output / name
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(data)
-        shutil.copymode(ROOT / name, target)
-        if name in MAPPINGS:
-            (output / MAPPINGS[name]).write_bytes(data)
-    manifest = {p.relative_to(output).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
-                for p in sorted(output.rglob('*')) if p.is_file()}
+        shutil.copymode(root / name, target)
+    manifest = {name: hashlib.sha256(data).hexdigest()
+                for name, data in contents.items()}
     (output / 'PUBLICATION.json').write_text(json.dumps({
         'files_sha256': manifest,
         'license_included': 'LICENSE' in manifest,
         'git_initialized': False,
         'published': False,
     }, indent=2) + '\n')
-    print(f'Exported {len(manifest)} files to {output}; license included: {"LICENSE" in manifest}')
+    return len(manifest)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--output', type=Path, required=True)
+    args = parser.parse_args()
+    try:
+        count = export(ROOT, args.output)
+    except (ExportError, OSError) as exc:
+        parser.error(str(exc))
+    print(f'Exported {count} files; no Git or publication actions performed')
 
 
 if __name__ == '__main__':

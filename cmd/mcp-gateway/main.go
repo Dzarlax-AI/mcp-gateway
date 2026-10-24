@@ -18,6 +18,8 @@ import (
 	"syscall"
 	"time"
 
+	"mcp-gateway/internal/accessauth"
+	"mcp-gateway/internal/config"
 	"mcp-gateway/internal/gateway"
 )
 
@@ -71,7 +73,11 @@ func run() error {
 	if e != nil {
 		return e
 	}
-	h, e := (&gateway.Gateway{Path: path, Store: registry, Catalog: catalogs, ReadBatch: batch, Timeout: 10 * time.Second, PublicOrigin: origin}).Handler()
+	oauth, e := accessOAuthOptions(origin)
+	if e != nil {
+		return e
+	}
+	h, e := (&gateway.Gateway{Path: path, Store: registry, Catalog: catalogs, ReadBatch: batch, Timeout: 10 * time.Second, PublicOrigin: origin, AccessOAuth: oauth}).Handler()
 	if e != nil {
 		return e
 	}
@@ -133,6 +139,45 @@ func run() error {
 		return nil
 	}
 	return errors.New("HTTP server stopped unexpectedly")
+}
+
+func accessOAuthOptions(publicOrigin string) (*accessauth.Verifier, error) {
+	raw := os.Getenv("GATEWAY_MCP_ACCESS_ENABLED")
+	enabled := false
+	if raw != "" {
+		v, err := strconv.ParseBool(raw)
+		if err != nil {
+			return nil, errors.New("GATEWAY_MCP_ACCESS_ENABLED must be a boolean")
+		}
+		enabled = v
+	}
+	issuer, audience, rawMap := os.Getenv("GATEWAY_MCP_ACCESS_ISSUER"), os.Getenv("GATEWAY_MCP_ACCESS_AUD"), os.Getenv("GATEWAY_MCP_ACCESS_USER_MAP")
+	if !enabled {
+		if issuer != "" || audience != "" || rawMap != "" {
+			return nil, errors.New("Access OAuth settings require GATEWAY_MCP_ACCESS_ENABLED=true")
+		}
+		return nil, nil
+	}
+	if publicOrigin == "" || issuer == "" || audience == "" || rawMap == "" {
+		return nil, errors.New("Access OAuth requires public origin, issuer, audience and user map")
+	}
+	obj, err := config.DecodeObject([]byte(rawMap))
+	if err != nil || len(obj) == 0 {
+		return nil, errors.New("GATEWAY_MCP_ACCESS_USER_MAP must be a nonempty strict JSON object")
+	}
+	users := make(map[string]string, len(obj))
+	for email, value := range obj {
+		principal, ok := value.(string)
+		if !ok {
+			return nil, errors.New("GATEWAY_MCP_ACCESS_USER_MAP values must be principal IDs")
+		}
+		users[email] = principal
+	}
+	v, err := accessauth.New(accessauth.Options{Issuer: issuer, Audience: audience, Users: users})
+	if err != nil {
+		return nil, errors.New("invalid Access OAuth configuration")
+	}
+	return v, nil
 }
 
 func connectionEndpoint(addr, publicOrigin string) string {

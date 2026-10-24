@@ -12,6 +12,23 @@ The gateway is a privileged bridge to upstream tools. Every shared enabled tool 
 - Upstream schemas/content are untrusted. Arguments are schema-validated; external schema references are not loaded. Tool annotations do not expand access.
 - Requests, results and operation duration are bounded. Invocation has no automatic retries.
 
+## Optional Access OAuth route
+
+The default-off `/mcp/oauth` route accepts signed Cloudflare Access application
+assertions and maps exact configured identities to existing gateway principals.
+It does not authenticate opaque forwarded OAuth bearer values as gateway keys.
+Native key authentication remains separate. OAuth inherits the principal's
+existing shared-tool/grant semantics; it does not add per-client ACL isolation.
+Multiple clients mapped to the same principal have the same effective rights.
+The route validates assertions on requests; deleting a principal denies later
+admissions. Already admitted ordinary operations may finish; batch admission
+also rechecks current access before dispatch. No instantaneous identity-provider
+revocation guarantee is made for an otherwise valid assertion.
+
+See [the OAuth guide](deployment/chatgpt-oauth.md) for required settings,
+origin/edge boundaries and acceptance limits. Keep actual identity mappings and
+rendered deployment configuration outside Git.
+
 ## Operations
 
 Keep the encryption key outside the database and its backup. Back up both securely; losing either may make stored secrets unrecoverable. Never commit tokens, `.env` files, databases, private keys, or authentication callback URLs. A copied key stays in the system clipboard until another item replaces it; automatic hiding clears only the browser display.
