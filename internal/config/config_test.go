@@ -10,7 +10,7 @@ import (
 
 func TestStrictConfig(t *testing.T) {
 	t.Setenv("TEST_CLIENT_TOKEN", "client-token-long-enough")
-	base := `{"servers":{"demo":{"url":"http://127.0.0.1:8081/mcp","tools":{"echo":{}}}},"principals":{"local":{"token_env":"TEST_CLIENT_TOKEN","grants":{"demo":{"echo":{"allowed_arguments":["text"]}}}}}}`
+	base := `{"principals":{"local":{"access_policy":"legacy_shared","grants":{"demo":{"echo":{"allowed_arguments":["text"]}}},"token_env":"TEST_CLIENT_TOKEN","tool_allowlist":{}}},"registry_version":2,"servers":{"demo":{"tools":{"echo":{}},"url":"http://127.0.0.1:8081/mcp"}}}`
 	path := filepath.Join(t.TempDir(), "config.json")
 	cases := []struct {
 		name, raw string
@@ -37,7 +37,9 @@ func TestStrictConfig(t *testing.T) {
 func TestInvalidPolicyAndCredentials(t *testing.T) {
 	t.Setenv("TEST_CLIENT_TOKEN", "client-token-long-enough")
 	t.Setenv("TEST_OTHER_TOKEN", "other-token-long-enough")
-	base := Config{Servers: map[string]Server{"demo": {URL: "http://127.0.0.1:8081/mcp", Tools: map[string]Tool{"echo": {}}}}, Principals: map[string]Principal{"local": {TokenEnv: "TEST_CLIENT_TOKEN", Grants: map[string]map[string]Grant{"demo": {"echo": {AllowedArguments: []string{"text"}}}}}}}
+	base := Config{RegistryVersion: 2,
+		Servers: map[string]Server{"demo": {URL: "http://127.0.0.1:8081/mcp", Tools: map[string]Tool{"echo": {}}}}, Principals: map[string]Principal{"local": {ToolAllowlist: map[string][]string{}, AccessPolicy: "legacy_shared",
+			TokenEnv: "TEST_CLIENT_TOKEN", Grants: map[string]map[string]Grant{"demo": {"echo": {AllowedArguments: []string{"text"}}}}}}}
 	for _, tc := range []string{"missing-secret", "duplicate-token", "shared-upstream-token", "bad-required", "bad-equals", "unknown-tool"} {
 		t.Run(tc, func(t *testing.T) {
 			b, _ := json.Marshal(base)
@@ -86,7 +88,9 @@ func TestURLRestriction(t *testing.T) {
 func TestHTTPSAllowlist(t *testing.T) {
 	t.Setenv("TEST_CLIENT_TOKEN", "client-token-long-enough")
 	endpoint := "https://developers.openai.com/mcp"
-	c := Config{Servers: map[string]Server{"docs": {URL: endpoint, Tools: map[string]Tool{}}}, Principals: map[string]Principal{"test": {TokenEnv: "TEST_CLIENT_TOKEN"}}}
+	c := Config{RegistryVersion: 2,
+		Servers: map[string]Server{"docs": {URL: endpoint, Tools: map[string]Tool{}}}, Principals: map[string]Principal{"test": {ToolAllowlist: map[string][]string{}, AccessPolicy: "legacy_shared",
+			TokenEnv: "TEST_CLIENT_TOKEN"}}}
 	if c.Validate() == nil {
 		t.Fatal("remote allowed by default")
 	}

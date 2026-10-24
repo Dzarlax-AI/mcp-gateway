@@ -183,7 +183,13 @@ func TestAccessOAuthSDKIdentityAndLivePrincipalGrantChecks(t *testing.T) {
 	f := newFixture(t)
 	f.t.Setenv("TEST_REMOTE_TOKEN", "synthetic-remote-key-123456")
 	f.config.Servers["remote"] = config.Server{Enabled: true, Description: "Remote synthetic server", URL: "http://127.0.0.1:1/mcp", Tools: map[string]config.Tool{"read": {Enabled: true}}}
-	f.config.Principals["remote"] = config.Principal{TokenEnv: "TEST_REMOTE_TOKEN", Grants: map[string]map[string]config.Grant{"remote": {"read": {}}}}
+	f.config.Principals["remote"] = config.Principal{ToolAllowlist: map[string][]string{"remote": {"read"}}, AccessPolicy: config.Restricted,
+
+		TokenEnv: "TEST_REMOTE_TOKEN", Grants: map[string]map[string]config.Grant{"remote": {"read": {}}}}
+	p := f.config.Principals["local"]
+	p.AccessPolicy = config.Restricted
+	p.ToolAllowlist = map[string][]string{"demo": {"echo", "error"}}
+	f.config.Principals["local"] = p
 	f.write()
 	verifier, tokens := accessFixture(t, map[string]string{"alice@example.net": "local", "bob@example.net": "remote"})
 	policyPath := filepath.Join(t.TempDir(), "read-batch.json")
@@ -265,7 +271,9 @@ func TestAccessOAuthSDKIdentityAndLivePrincipalGrantChecks(t *testing.T) {
 		t.Fatalf("OAuth batch item did not succeed: %s", encoded)
 	}
 	identity.Store("alice@example.net")
-	delete(f.config.Principals["local"].Grants["demo"], "echo")
+	p = f.config.Principals["local"]
+	p.ToolAllowlist = map[string][]string{}
+	f.config.Principals["local"] = p
 	f.write()
 	res, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "invoke_tool", Arguments: map[string]any{"server_id": "demo", "tool_name": "echo", "arguments": map[string]any{"text": "blocked"}}})
 	if err != nil {

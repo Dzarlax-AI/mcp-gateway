@@ -257,6 +257,9 @@ func (s *DB) read(ctx context.Context, tx *sql.Tx) (Snapshot, error) {
 	}
 	c, err := config.Decode([]byte(raw))
 	if err != nil {
+		if errors.Is(err, config.ErrRegistryVersion) {
+			return Snapshot{}, err
+		}
 		return Snapshot{}, ErrStore
 	}
 	secrets, err := s.readSecrets(ctx, tx)

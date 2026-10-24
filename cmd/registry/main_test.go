@@ -20,7 +20,11 @@ func TestExplicitMigrationImportExport(t *testing.T) {
 	t.Setenv("GATEWAY_SECRET_KEY", base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{1}, 32)))
 	t.Setenv("CLI_CLIENT_TOKEN", "synthetic-client-123456789")
 	t.Setenv("CLI_API_KEY", "short key")
-	c := config.Config{Servers: map[string]config.Server{"custom": {URL: "http://127.0.0.1:9000/mcp", AuthHeader: "x-api-key", TokenEnv: "CLI_API_KEY", Tools: map[string]config.Tool{"read": {Enabled: true}, "write": {Enabled: false}}}}, Principals: map[string]config.Principal{"codex": {TokenEnv: "CLI_CLIENT_TOKEN", Grants: map[string]map[string]config.Grant{"custom": {"read": {AllowedArguments: []string{"scope"}, ArgumentEquals: map[string]any{"scope": "safe"}}}}}}}
+	c := config.Config{RegistryVersion: 2,
+
+		Servers: map[string]config.Server{"custom": {URL: "http://127.0.0.1:9000/mcp", AuthHeader: "x-api-key", TokenEnv: "CLI_API_KEY", Tools: map[string]config.Tool{"read": {Enabled: true}, "write": {Enabled: false}}}}, Principals: map[string]config.Principal{"codex": {ToolAllowlist: map[string][]string{}, AccessPolicy: "legacy_shared",
+
+			TokenEnv: "CLI_CLIENT_TOKEN", Grants: map[string]map[string]config.Grant{"custom": {"read": {AllowedArguments: []string{"scope"}, ArgumentEquals: map[string]any{"scope": "safe"}}}}}}}
 	b, _ := json.Marshal(c)
 	file := filepath.Join(t.TempDir(), "config.json")
 	if os.WriteFile(file, b, 0600) != nil {
@@ -65,8 +69,8 @@ func TestExplicitMigrationImportExport(t *testing.T) {
 		t.Fatal("export included credential")
 	}
 
-	if err := run([]string{"simplify"}); err != nil {
-		t.Fatal(err)
+	if err := run([]string{"simplify"}); err == nil {
+		t.Fatal("v2 simplify must fail")
 	}
 	db, err := store.Open("sqlite", path, bytes.Repeat([]byte{1}, 32))
 	if err != nil {
@@ -76,11 +80,11 @@ func TestExplicitMigrationImportExport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if snap.Revision != 2 || len(snap.Config.Principals["codex"].Grants) != 0 || !snap.Config.Servers["custom"].Tools["read"].Enabled || snap.Config.Servers["custom"].Tools["write"].Enabled || snap.Config.Servers["custom"].AuthHeader != "x-api-key" {
-		t.Fatal("simplify did not preserve switches/credentials")
+	if snap.Revision != 1 || len(snap.Config.Principals["codex"].Grants) == 0 || !snap.Config.Servers["custom"].Tools["read"].Enabled || snap.Config.Servers["custom"].Tools["write"].Enabled || snap.Config.Servers["custom"].AuthHeader != "x-api-key" {
+		t.Fatal("rejected simplify changed state")
 	}
-	if err := run([]string{"simplify"}); err != nil {
-		t.Fatal(err)
+	if err := run([]string{"simplify"}); err == nil {
+		t.Fatal("v2 simplify must fail")
 	}
 	again, err := db.ReadSnapshot(context.Background())
 	db.Close()

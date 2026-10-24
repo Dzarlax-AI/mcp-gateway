@@ -77,6 +77,9 @@ class PublicationExportTests(unittest.TestCase):
         publication.export(SCRIPT.parent.parent, self.output)
         manifest = json.loads((self.output / 'PUBLICATION.json').read_text())
         self.assertIn('scripts/test_prepare_github.py', manifest['files_sha256'])
+        self.assertIn('internal/admin/permissions.js', manifest['files_sha256'])
+        self.assertIn('scripts/test_permission_actions.cjs', manifest['files_sha256'])
+        self.assertIn('docs/deployment/agent-acl.md', manifest['files_sha256'])
         self.assertIn('internal/readpolicy/contracts/calendar-mcp-v1.json',
                       manifest['files_sha256'])
 

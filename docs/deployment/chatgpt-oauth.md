@@ -106,3 +106,7 @@ database dump, private recovery bundle or deployment receipt to Git.
 The export allowlist includes this guide and its example, while excluding
 `deploy/mcp-gateway/`, `docs/local/`, local verification and approval plans.
 These exclusions do not remove files already present in Git history.
+
+## Agent permissions
+
+Registry document v2 requires explicit per-principal policy and exact tool ACL. New keys start restricted with no access. OAuth and native credentials resolve to the same policy evaluator. Existing installations require a reviewed explicit migration; see the [ACL runbook](agent-acl.md). Local audit is opt-in and has explicit degraded status.

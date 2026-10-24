@@ -45,8 +45,8 @@ the invocation to the saved endpoint and returns the upstream MCP result.
 The admin gives you one place to manage this catalog and its credentials. A
 server or tool switch controls availability across clients. Separate client
 keys let you revoke one application's connection while keeping the others.
-All client keys share access to enabled tools; they are not separate permission
-profiles.
+Each principal has an exact tool ACL. New keys start without tool access;
+existing migrated principals retain explicit legacy compatibility until restricted.
 
 ## What is supported
 
@@ -219,7 +219,7 @@ read-only. Disabling the batch flag restores the five-tool search interface.
 
 ## Access and security
 
-A client key grants access to **all shared enabled tools**, including tools that modify data. There are no per-client grants in the ordinary UI. Disable a tool if clients must not use it. Legacy file configurations can still use argument grants.
+A restricted client key can use only exact selected server/tool pairs, bounded by global enable switches and input validation. New keys start with no access; use Connection → Edit permissions. Migrated `legacy_shared` principals retain old shared-tool access until explicitly restricted. Legacy argument constraints still apply to legacy tools. See [Agent ACL and migration](docs/deployment/agent-acl.md).
 
 Client keys authenticate using SHA-256 digests. Recoverable keys are stored separately with AES-256-GCM under `GATEWAY_SECRET_KEY`. Deleting a key revokes subsequent requests, including existing MCP sessions; admitted operations may finish. Protect the admin and keep the encryption key separate from database backups.
 
@@ -264,3 +264,5 @@ Registry mode exposes one **Batch for reads** switch per connector and a reviewe
 The settings persist via existing registry CAS (no SQL migration), while eligibility follows current catalog metadata. Check/TTL and later requests in the same MCP session observe changes. New tool discovery does not automatically enable ordinary access. Search/discovery expose advisory `batch_read_allowed` and `batch_read_reason`; dispatch rechecks them against current policy. Endpoint/auth/credential changes clear the connector batch approval.
 
 See [local acceptance, protocol limitation, future release and rollback](docs/deployment/connector-batch-reading.md). This revision has not been deployed.
+
+Registry documents require `registry_version: 2`. Existing unversioned documents require the explicit offline/SQL migration described in the [ACL runbook](docs/deployment/agent-acl.md). SQL schema remains v2. Local audit is opt-in via `GATEWAY_AUDIT_ENABLED` and `GATEWAY_AUDIT_DIR`.

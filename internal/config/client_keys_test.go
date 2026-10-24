@@ -12,8 +12,11 @@ func TestClientKeyValidationAndAuthentication(t *testing.T) {
 	t.Setenv("KEYS_ENV", "synthetic-preserved-codex-token")
 	t.Setenv("KEYS_UPSTREAM", "synthetic-upstream-token")
 	token := "mgw_abcdefghABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_"
-	p := Principal{TokenHash: TokenDigest(token), Key: &ClientKey{Name: "Laptop", Prefix: token[:12], CreatedAt: "2026-10-12T12:00:00Z"}}
-	c := &Config{Servers: map[string]Server{}, Principals: map[string]Principal{"codex": {TokenEnv: "KEYS_ENV"}, "key_new": p}}
+	p := Principal{ToolAllowlist: map[string][]string{}, AccessPolicy: "legacy_shared",
+		TokenHash: TokenDigest(token), Key: &ClientKey{Name: "Laptop", Prefix: token[:12], CreatedAt: "2026-10-12T12:00:00Z"}}
+	c := &Config{RegistryVersion: 2,
+		Servers: map[string]Server{}, Principals: map[string]Principal{"codex": {ToolAllowlist: map[string][]string{}, AccessPolicy: "legacy_shared",
+			TokenEnv: "KEYS_ENV"}, "key_new": p}}
 	if err := c.Validate(); err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +79,9 @@ func TestClientKeyValidationAndAuthentication(t *testing.T) {
 
 func TestRecoverableClientKeysRequireDatabase(t *testing.T) {
 	token := "mgw_" + strings.Repeat("a", 43)
-	c := Config{Servers: map[string]Server{}, Principals: map[string]Principal{"key": {TokenHash: TokenDigest(token), Key: &ClientKey{Name: "Laptop", Prefix: token[:12], CreatedAt: "2026-10-12T12:00:00Z", Recoverable: true}}}}
+	c := Config{RegistryVersion: 2,
+		Servers: map[string]Server{}, Principals: map[string]Principal{"key": {ToolAllowlist: map[string][]string{}, AccessPolicy: "legacy_shared",
+			TokenHash: TokenDigest(token), Key: &ClientKey{Name: "Laptop", Prefix: token[:12], CreatedAt: "2026-10-12T12:00:00Z", Recoverable: true}}}}
 	b, _ := json.Marshal(c)
 	path := filepath.Join(t.TempDir(), "registry.json")
 	if err := os.WriteFile(path, b, 0600); err != nil {

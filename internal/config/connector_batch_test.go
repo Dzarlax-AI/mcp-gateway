@@ -7,7 +7,7 @@ import (
 
 func TestConnectorBatchSettingsFailClosed(t *testing.T) {
 	t.Setenv("CONNECTOR_CONFIG_TOKEN", "synthetic-config-client-token")
-	base := `{"servers":{"s":{"url":"http://127.0.0.1:18081/mcp","enabled":true,"tools":{}}},"principals":{"p":{"token_env":"CONNECTOR_CONFIG_TOKEN","grants":{}}}}`
+	base := `{"principals":{"p":{"access_policy":"legacy_shared","grants":{},"token_env":"CONNECTOR_CONFIG_TOKEN","tool_allowlist":{}}},"registry_version":2,"servers":{"s":{"enabled":true,"tools":{},"url":"http://127.0.0.1:18081/mcp"}}}`
 	var c Config
 	json.Unmarshal([]byte(base), &c)
 	if e := c.Validate(); e != nil {

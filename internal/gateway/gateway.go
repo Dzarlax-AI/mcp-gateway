@@ -18,12 +18,12 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"mcp-gateway/internal/accessauth"
+	"mcp-gateway/internal/audit"
 	"mcp-gateway/internal/catalog"
 	"mcp-gateway/internal/config"
 	"mcp-gateway/internal/policy"
 	"mcp-gateway/internal/store"
 	"mcp-gateway/internal/upstream"
-	"os"
 )
 
 const MaxBody = 1 << 20
@@ -31,6 +31,7 @@ const MaxBody = 1 << 20
 var ErrArguments = errors.New("invalid gateway arguments")
 
 type Gateway struct {
+	Audit     *audit.Sink
 	Catalog   *catalog.Provider
 	ReadBatch *ReadBatchExecutor
 	Store     store.Store
@@ -88,7 +89,49 @@ func result(v any) *mcp.CallToolResult {
 func failure(e error) *mcp.CallToolResult {
 	return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: e.Error()}}}
 }
-func (g *Gateway) call(ctx context.Context, r *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func (g *Gateway) call(ctx context.Context, r *mcp.CallToolRequest) (output *mcp.CallToolResult, callErr error) {
+	trace := &callTrace{}
+	ctx = context.WithValue(ctx, callTraceKey{}, trace)
+	defer func() {
+		if g.Audit == nil {
+			return
+		}
+		event := audit.Event{Kind: "mcp", RequestID: audit.RequestID(), Outcome: "denied", Decision: "deny", Reason: "authorization_or_validation", Dispatched: trace.dispatched, Tool: r.Params.Name}
+		event.Revision = trace.revision.Load()
+		if _, ok := ctx.Value(accessIdentityKey{}).(accessauth.Identity); ok {
+			event.Auth = "oauth"
+		} else {
+			event.Auth = "bearer"
+			if r.Extra != nil && r.Extra.Header.Get("X-API-Key") != "" {
+				event.Auth = "api_key"
+			}
+		}
+		if a, e := decode(r.Params.Arguments); e == nil {
+			if config.ValidIdentifier(a.Server) {
+				event.Server = a.Server
+			}
+			if config.ValidIdentifier(a.Tool) {
+				event.Tool = a.Tool
+			}
+		}
+		if output != nil && !output.IsError && callErr == nil {
+			event.Reason = "completed"
+			event.Decision = "allow"
+			event.Outcome = "ok"
+		} else if trace.dispatched {
+			event.Outcome = "dispatched_error"
+			event.Decision = "allow"
+			event.Reason = "upstream_error"
+		}
+		if id, ok := ctx.Value(admittedPrincipalKey{}).(string); ok {
+			event.Principal = id
+		}
+		if r.Params.Name == "invoke_read_batch" {
+			event.Kind = "batch_request"
+		}
+		_ = g.Audit.Record(event)
+	}()
+
 	// The batch deadline includes the initial registry/auth admission as well
 	// as queued work. Leave the established single-call timing unchanged.
 	if r.Params.Name == "invoke_read_batch" {
@@ -102,6 +145,7 @@ func (g *Gateway) call(ctx context.Context, r *mcp.CallToolRequest) (*mcp.CallTo
 	}
 	snapshot, e := g.snapshot(ctx)
 	c := snapshot.Config
+	trace.revision.Store(snapshot.Revision)
 	if e != nil {
 		return failure(e), nil
 	}
@@ -112,6 +156,7 @@ func (g *Gateway) call(ctx context.Context, r *mcp.CallToolRequest) (*mcp.CallTo
 	if e != nil {
 		return failure(policy.ErrDenied), nil
 	}
+	ctx = context.WithValue(ctx, admittedPrincipalKey{}, p)
 	if r.Params.Name == "invoke_read_batch" {
 		return g.readBatch(ctx, r.Extra.Header.Clone(), r.Params.Arguments), nil
 	}
@@ -122,7 +167,7 @@ func (g *Gateway) call(ctx context.Context, r *mcp.CallToolRequest) (*mcp.CallTo
 	ctx, cancel := context.WithTimeout(ctx, g.Timeout)
 	defer cancel()
 	if r.Params.Name == "search_tools" {
-		return g.search(ctx, snapshot, p, a), nil
+		return g.search(ctx, snapshot, p, a, r.Extra.Header), nil
 	}
 	if r.Params.Name == "discover_server" {
 		if a.Limit == 0 {
@@ -181,23 +226,16 @@ func (g *Gateway) call(ctx context.Context, r *mcp.CallToolRequest) (*mcp.CallTo
 		}
 	}
 	if g.Catalog != nil {
-		return g.cached(ctx, snapshot, p, a, r.Params.Name), nil
+		return g.cached(ctx, snapshot, p, a, r.Params.Name, r.Extra.Header), nil
 	}
-	var s *mcp.ClientSession
-	var close func()
-	server := c.Servers[a.Server]
-	if g.Store != nil {
-		token := os.Getenv(server.TokenEnv)
-		if server.TokenRef != "" {
-			token, e = store.ResolveSnapshotSecret(snapshot, a.Server)
-			if e != nil {
-				return failure(config.ErrConfig), nil
-			}
-		}
-		s, close, e = upstream.ConnectWithToken(ctx, server, token)
-	} else {
-		s, close, e = upstream.Connect(ctx, server)
+	conn, e := catalog.FromSnapshot(snapshot, a.Server)
+	if e != nil {
+		return failure(e), nil
 	}
+	if _, _, _, e = g.admitOperation(ctx, r.Extra.Header, a, conn, r.Params.Name == "invoke_tool"); e != nil {
+		return failure(e), nil
+	}
+	s, close, e := upstream.ConnectWithToken(ctx, conn.Server, conn.Token)
 	if e != nil {
 		return failure(e), nil
 	}
@@ -206,6 +244,11 @@ func (g *Gateway) call(ctx context.Context, r *mcp.CallToolRequest) (*mcp.CallTo
 	if e != nil {
 		return failure(e), nil
 	}
+	snapshot, p, _, e = g.admitOperation(ctx, r.Extra.Header, a, conn, false)
+	if e != nil {
+		return failure(e), nil
+	}
+	c = snapshot.Config
 	if r.Params.Name == "discover_tools" {
 		type item struct {
 			Name        string `json:"name"`
@@ -230,6 +273,10 @@ func (g *Gateway) call(ctx context.Context, r *mcp.CallToolRequest) (*mcp.CallTo
 		if e = upstream.Validate(t.InputSchema, a.Arguments); e != nil {
 			return failure(e), nil
 		}
+		if e = g.checkDispatch(ctx, r.Extra.Header, a, conn, t); e != nil {
+			return failure(e), nil
+		}
+		markDispatched(ctx)
 		res, e := s.CallTool(ctx, &mcp.CallToolParams{Name: a.Tool, Arguments: a.Arguments})
 		if e != nil {
 			return failure(upstream.ErrUpstream), nil
@@ -320,6 +367,7 @@ func (g *Gateway) Handler() (http.Handler, error) {
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Gateway-Audit-Status", g.Audit.State())
 		if _, e := g.snapshot(r.Context()); e != nil {
 			http.Error(w, "unavailable", 503)
 			return

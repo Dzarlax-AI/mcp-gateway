@@ -189,7 +189,9 @@ func newControlledBatchGateway(t *testing.T, backend *controlledBatchBackend) (*
 	t.Cleanup(backendHTTP.Close)
 	connURL = backendHTTP.URL + "/mcp"
 	grant := config.Grant{AllowedArguments: []string{"group"}, RequiredArguments: []string{"group"}}
-	cfg := config.Config{Servers: map[string]config.Server{"demo": {Enabled: true, URL: connURL, TokenEnv: "TEST_BACKEND_TOKEN", Tools: map[string]config.Tool{"read": {Enabled: true}}}}, Principals: map[string]config.Principal{"local": {TokenEnv: "TEST_CLIENT_TOKEN", Grants: map[string]map[string]config.Grant{"demo": {"read": grant}}}}}
+	cfg := config.Config{RegistryVersion: 2,
+		Servers: map[string]config.Server{"demo": {Enabled: true, URL: connURL, TokenEnv: "TEST_BACKEND_TOKEN", Tools: map[string]config.Tool{"read": {Enabled: true}}}}, Principals: map[string]config.Principal{"local": {ToolAllowlist: map[string][]string{}, AccessPolicy: "legacy_shared",
+			TokenEnv: "TEST_CLIENT_TOKEN", Grants: map[string]map[string]config.Grant{"demo": {"read": grant}}}}}
 	write := func() {
 		b, e := json.Marshal(cfg)
 		if e != nil {

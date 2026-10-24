@@ -240,7 +240,8 @@ func TestConnectionURLAndAdminTokenSeparation(t *testing.T) {
 	}
 	snap, _ := s.ReadSnapshot(context.Background())
 	c := clone(snap.Config)
-	c.Principals["managed"] = config.Principal{TokenHash: config.TokenDigest(adminToken), Key: &config.ClientKey{Name: "bad", Prefix: "mgw_abcdefgh", CreatedAt: "2026-10-12T12:00:00Z"}}
+	c.Principals["managed"] = config.Principal{ToolAllowlist: map[string][]string{}, AccessPolicy: "legacy_shared",
+		TokenHash: config.TokenDigest(adminToken), Key: &config.ClientKey{Name: "bad", Prefix: "mgw_abcdefgh", CreatedAt: "2026-10-12T12:00:00Z"}}
 	if _, err := s.CompareAndSwap(context.Background(), snap.Revision, c, nil); err != nil {
 		t.Fatal(err)
 	}

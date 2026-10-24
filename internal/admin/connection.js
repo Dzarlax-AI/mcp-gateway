@@ -44,6 +44,9 @@
     data.keys.forEach(key => {
       const card = element('article', undefined, 'key-card'); card.dataset.keyId = key.id;
       card.append(element('h3', key.name));
+      card.append(element('p', 'Principal ' + key.id + ' · Policy ' + (key.policy || 'unknown') + ' · Configured ' + (key.configured || 0) + ' · Effective ' + (key.effective || 0)));
+      if (key.legacy) card.append(element('p', 'Legacy shared access: enabled shared tools are available.'));
+      const permissions = element('a', 'Edit permissions'); permissions.href = base + '/admin/connection/permissions/' + encodeURIComponent(key.id); card.append(permissions);
       if (key.managed) {
         const info = element('p'); info.append(element('code', key.prefix + '…'), document.createTextNode(' · Created ' + key.created_at)); card.append(info);
         if (key.recoverable) {
@@ -130,8 +133,9 @@
       apply(data);
       if (creation) {
         form.reset(); form.querySelector('[name="revision"]').value = revision;
-        status.textContent = 'Key created. Use Show key or Copy key when you need it.';
+        status.textContent = 'Key created with no tool access. Edit permissions, then use Show key or Copy key when needed.';
       } else status.textContent = 'Key deleted. Subsequent requests using it are rejected.';
+      if (data.audit_status === 'degraded') status.textContent += ' Change saved; audit unavailable.';
     } catch {
       uncertain = true; refresh.hidden = false;
       status.textContent = 'Change could not be confirmed. Refresh keys before retrying. Check whether the key appeared before creating another. Its value can be shown from its card.';

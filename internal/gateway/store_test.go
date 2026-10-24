@@ -81,7 +81,8 @@ func testDatabaseRegistryRuntime(t *testing.T, header, clientHeader string, reco
 	}
 	// A separately issued hash-backed key completes the same real protocol path.
 	managedToken := "mgw_" + strings.Repeat("m", 43)
-	c.Principals["key_new"] = config.Principal{TokenHash: config.TokenDigest(managedToken), Key: &config.ClientKey{Name: "Laptop", Prefix: managedToken[:12], CreatedAt: "2026-10-12T12:00:00Z", Recoverable: recoverable}}
+	c.Principals["key_new"] = config.Principal{ToolAllowlist: map[string][]string{}, AccessPolicy: "legacy_shared",
+		TokenHash: config.TokenDigest(managedToken), Key: &config.ClientKey{Name: "Laptop", Prefix: managedToken[:12], CreatedAt: "2026-10-12T12:00:00Z", Recoverable: recoverable}}
 	tool := server.Tools["echo"]
 	tool.AccessMode = "shared"
 	server.Tools["echo"] = tool

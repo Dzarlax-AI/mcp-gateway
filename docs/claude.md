@@ -48,14 +48,12 @@ With a read-only tool enabled on your upstream, ask Claude Code:
 
 The expected sequence is `discover_server` → `discover_tools` →
 `get_tool_schema` → `invoke_tool`. Check the tool calls and result, not only a
-Connected label. A client key can access every shared enabled tool, including
-modifying tools. Disable those tools if this client must only read.
+Connected label. A restricted key can access only explicitly selected tools. Grant only the required reads in Connection → Edit permissions. Migrated legacy keys retain their prior shared access until restricted.
 
 For 401 errors, check that the environment is set in the actual Claude Code
 process and that the key is still present. For missing servers/tools, check
 their enablement and connection check in the admin. Administrator SSO does not
-authenticate MCP clients; the gateway uses its client key and has no client
-OAuth login flow.
+authenticate MCP clients; native connections use client keys; the optional separate Access OAuth route maps verified identities to the same principal ACL.
 
 These instructions target Claude Code. They do not establish compatibility with
 the separate Claude Desktop custom-connector setup. No Claude Code end-to-end

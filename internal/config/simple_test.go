@@ -4,7 +4,9 @@ import "testing"
 
 func TestSimplifyPreservesSwitchesAndResetsPolicy(t *testing.T) {
 	t.Setenv("SIMPLE_TOKEN", "synthetic-client-token-12345")
-	c := &Config{Servers: map[string]Server{"s": {URL: "http://127.0.0.1:9876/mcp", Enabled: false, Tools: map[string]Tool{"read": {Enabled: true}, "write": {Enabled: false}}}}, Principals: map[string]Principal{"codex": {TokenEnv: "SIMPLE_TOKEN", Grants: map[string]map[string]Grant{"s": {"read": {AllowedArguments: []string{"scope"}, ArgumentEquals: map[string]any{"scope": "safe"}}}}}}}
+	c := &Config{RegistryVersion: 2,
+		Servers: map[string]Server{"s": {URL: "http://127.0.0.1:9876/mcp", Enabled: false, Tools: map[string]Tool{"read": {Enabled: true}, "write": {Enabled: false}}}}, Principals: map[string]Principal{"codex": {ToolAllowlist: map[string][]string{}, AccessPolicy: "legacy_shared",
+			TokenEnv: "SIMPLE_TOKEN", Grants: map[string]map[string]Grant{"s": {"read": {AllowedArguments: []string{"scope"}, ArgumentEquals: map[string]any{"scope": "safe"}}}}}}}
 	before, err := Clone(c)
 	if err != nil {
 		t.Fatal(err)

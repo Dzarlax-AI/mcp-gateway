@@ -23,9 +23,10 @@ import (
 )
 
 type Config struct {
-	HTTPSAllowlist []string             `json:"https_allowlist,omitempty"`
-	Servers        map[string]Server    `json:"servers"`
-	Principals     map[string]Principal `json:"principals"`
+	RegistryVersion int                  `json:"registry_version"`
+	HTTPSAllowlist  []string             `json:"https_allowlist,omitempty"`
+	Servers         map[string]Server    `json:"servers"`
+	Principals      map[string]Principal `json:"principals"`
 }
 type Server struct {
 	BatchReadEnabled  bool            `json:"batch_read_enabled,omitempty"`
@@ -45,10 +46,12 @@ type Tool struct {
 	AccessMode string `json:"access_mode,omitempty"`
 }
 type Principal struct {
-	TokenEnv  string                      `json:"token_env,omitempty"`
-	TokenHash string                      `json:"token_hash,omitempty"`
-	Key       *ClientKey                  `json:"key,omitempty"`
-	Grants    map[string]map[string]Grant `json:"grants"`
+	AccessPolicy  string                      `json:"access_policy"`
+	ToolAllowlist map[string][]string         `json:"tool_allowlist"`
+	TokenEnv      string                      `json:"token_env,omitempty"`
+	TokenHash     string                      `json:"token_hash,omitempty"`
+	Key           *ClientKey                  `json:"key,omitempty"`
+	Grants        map[string]map[string]Grant `json:"grants"`
 }
 type ClientKey struct {
 	Recoverable bool   `json:"recoverable,omitempty"`
@@ -83,6 +86,12 @@ type Grant struct {
 	RequiredArguments []string       `json:"required_arguments"`
 	ArgumentEquals    map[string]any `json:"argument_equals"`
 }
+
+const RegistryVersion = 2
+const Restricted = "restricted"
+const LegacyShared = "legacy_shared"
+
+var ErrRegistryVersion = errors.New("registry document upgrade required")
 
 var ErrConfig = errors.New("configuration unavailable or invalid")
 var ident = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127}$`)
@@ -159,8 +168,11 @@ func Decode(b []byte) (*Config, error) {
 	d.DisallowUnknownFields()
 	d.UseNumber()
 	var c Config
-	if d.Decode(&c) != nil || c.Validate() != nil {
+	if d.Decode(&c) != nil {
 		return nil, ErrConfig
+	}
+	if err := c.Validate(); err != nil {
+		return nil, err
 	}
 	return &c, nil
 }
@@ -200,6 +212,9 @@ func unique(d *json.Decoder) error {
 	return nil
 }
 func (c *Config) Validate() error {
+	if c.RegistryVersion != RegistryVersion {
+		return ErrRegistryVersion
+	}
 	if c.Servers == nil || len(c.Principals) == 0 {
 		return ErrConfig
 	}
@@ -220,7 +235,7 @@ func (c *Config) Validate() error {
 		digest := p.TokenHash
 		if digest != "" {
 			b, err := hex.DecodeString(digest)
-			if err != nil || len(b) != 32 || digest != strings.ToLower(digest) || p.TokenEnv != "" || p.Key == nil || !ValidKeyName(p.Key.Name) || !keyPrefix.MatchString(p.Key.Prefix) || len(p.Grants) != 0 {
+			if err != nil || len(b) != 32 || digest != strings.ToLower(digest) || p.TokenEnv != "" || p.Key == nil || !ValidKeyName(p.Key.Name) || !keyPrefix.MatchString(p.Key.Prefix) {
 				return ErrConfig
 			}
 			created, err := time.Parse(time.RFC3339, p.Key.CreatedAt)
@@ -262,6 +277,22 @@ func (c *Config) Validate() error {
 		}
 	}
 	for _, p := range c.Principals {
+		if (p.AccessPolicy != Restricted && p.AccessPolicy != LegacyShared) || p.ToolAllowlist == nil || (p.AccessPolicy == LegacyShared && len(p.ToolAllowlist) != 0) {
+			return ErrConfig
+		}
+		for sid, names := range p.ToolAllowlist {
+			srv, ok := c.Servers[sid]
+			if !ok || !ValidIdentifier(sid) || names == nil {
+				return ErrConfig
+			}
+			seen := map[string]bool{}
+			for _, name := range names {
+				if _, ok := srv.Tools[name]; !ok || !ValidIdentifier(name) || seen[name] {
+					return ErrConfig
+				}
+				seen[name] = true
+			}
+		}
 		for sid, gs := range p.Grants {
 			s, ok := c.Servers[sid]
 			if !ok {

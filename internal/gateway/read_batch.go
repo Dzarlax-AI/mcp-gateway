@@ -6,6 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"mcp-gateway/internal/accessauth"
+	"mcp-gateway/internal/audit"
+	"mcp-gateway/internal/config"
 	"net/http"
 	"regexp"
 	"sync"
@@ -175,7 +178,39 @@ func (g *Gateway) readBatch(ctx context.Context, headers http.Header, raw json.R
 
 var errReadBatchBusy = errors.New("read batch busy")
 
-func (b *ReadBatchExecutor) execute(ctx context.Context, g *Gateway, headers http.Header, op readBatchOperation) readBatchItemResult {
+func (b *ReadBatchExecutor) execute(ctx context.Context, g *Gateway, headers http.Header, op readBatchOperation) (output readBatchItemResult) {
+	defer func() {
+		if g.Audit == nil {
+			return
+		}
+		e := audit.Event{Kind: "batch_item", RequestID: audit.RequestID(), Outcome: output.Status, Dispatched: output.Dispatched}
+		if readBatchID.MatchString(op.ID) {
+			e.ItemID = op.ID
+		}
+		if config.ValidIdentifier(op.ServerID) {
+			e.Server = op.ServerID
+		}
+		if config.ValidIdentifier(op.ToolName) {
+			e.Tool = op.ToolName
+		}
+		if snap, err := g.snapshot(ctx); err == nil {
+			e.Principal, _ = resolvePrincipal(ctx, snap.Config, headers)
+			e.Revision = snap.Revision
+		}
+		if id, ok := ctx.Value(admittedPrincipalKey{}).(string); ok {
+			e.Principal = id
+		}
+		e.Auth = "bearer"
+		if headers.Get("X-API-Key") != "" {
+			e.Auth = "api_key"
+		}
+		if _, ok := ctx.Value(accessIdentityKey{}).(accessauth.Identity); ok {
+			e.Auth = "oauth"
+		}
+		e.Reason = output.Status
+		_ = g.Audit.Record(e)
+	}()
+
 	r := readBatchItemResult{ID: op.ID, Status: "denied"}
 	var args map[string]any
 	d := json.NewDecoder(bytesReader(op.Arguments))
@@ -335,7 +370,7 @@ func readBatchAdmit(ctx context.Context, g *Gateway, p *ReadBatchPolicy, headers
 		return snapshot, "", catalog.Connection{}, err
 	}
 	principal, err := resolvePrincipal(ctx, snapshot.Config, headers)
-	if err != nil {
+	if expected, ok := ctx.Value(admittedPrincipalKey{}).(string); err != nil || (ok && expected != principal) {
 		return snapshot, "", catalog.Connection{}, readBatchDenied
 	}
 	grant, err := policy.Grant(snapshot.Config, principal, op.ServerID, op.ToolName)

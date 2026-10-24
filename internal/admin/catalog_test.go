@@ -44,7 +44,9 @@ func catalogAdminFixture(t *testing.T, dsn string) (*handler, store.Store) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { db.Close() })
-	cfg := &config.Config{Servers: map[string]config.Server{}, Principals: map[string]config.Principal{"codex": {TokenEnv: "ADMIN_TEST_CLIENT", Grants: map[string]map[string]config.Grant{}}}}
+	cfg := &config.Config{RegistryVersion: 2,
+		Servers: map[string]config.Server{}, Principals: map[string]config.Principal{"codex": {ToolAllowlist: map[string][]string{}, AccessPolicy: "legacy_shared",
+			TokenEnv: "ADMIN_TEST_CLIENT", Grants: map[string]map[string]config.Grant{}}}}
 	if _, err = db.CompareAndSwap(ctx, 0, cfg, nil); err != nil {
 		t.Fatal("requires empty disposable PostgreSQL database", err)
 	}

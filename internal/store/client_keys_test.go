@@ -66,7 +66,8 @@ func recoverableContract(t *testing.T, kind, location string) {
 		t.Fatal("migration altered upstream")
 	}
 	token := "mgw_" + strings.Repeat("a", 43)
-	c.Principals["key_new"] = config.Principal{TokenHash: config.TokenDigest(token), Key: &config.ClientKey{Name: "Laptop", Prefix: token[:12], CreatedAt: "2026-10-12T12:00:00Z", Recoverable: true}}
+	c.Principals["key_new"] = config.Principal{ToolAllowlist: map[string][]string{}, AccessPolicy: "legacy_shared",
+		TokenHash: config.TokenDigest(token), Key: &config.ClientKey{Name: "Laptop", Prefix: token[:12], CreatedAt: "2026-10-12T12:00:00Z", Recoverable: true}}
 	if _, err = s.CompareAndSwap(ctx, 1, c, nil); !errors.Is(err, ErrSecret) {
 		t.Fatal("missing ciphertext admitted", err)
 	}
@@ -119,7 +120,8 @@ func recoverableContract(t *testing.T, kind, location string) {
 	}
 	other.Close()
 	// Same ciphertext moved to another key fails its associated-data check.
-	c.Principals["key_second"] = config.Principal{TokenHash: config.TokenDigest("mgw_" + strings.Repeat("b", 43)), Key: &config.ClientKey{Name: "Phone", Prefix: "mgw_bbbbbbbb", CreatedAt: "2026-10-12T12:00:00Z", Recoverable: true}}
+	c.Principals["key_second"] = config.Principal{ToolAllowlist: map[string][]string{}, AccessPolicy: "legacy_shared",
+		TokenHash: config.TokenDigest("mgw_" + strings.Repeat("b", 43)), Key: &config.ClientKey{Name: "Phone", Prefix: "mgw_bbbbbbbb", CreatedAt: "2026-10-12T12:00:00Z", Recoverable: true}}
 	secondToken := "mgw_" + strings.Repeat("b", 43)
 	if _, err = s.CompareAndSwapClientKeys(ctx, 2, c, map[string]*string{"key_second": &secondToken}); err != nil {
 		t.Fatal(err)

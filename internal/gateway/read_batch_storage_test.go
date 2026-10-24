@@ -46,7 +46,8 @@ func testReadBatchStorage(t *testing.T, kind, location string) {
 	server.Tools["echo"] = tool
 	cfg.Servers["demo"] = server
 	managed := "mgw_" + strings.Repeat("b", 43)
-	cfg.Principals["managed"] = config.Principal{TokenHash: config.TokenDigest(managed), Key: &config.ClientKey{Name: "Batch test", Prefix: managed[:12], CreatedAt: "2026-10-13T12:00:00Z"}, Grants: map[string]map[string]config.Grant{}}
+	cfg.Principals["managed"] = config.Principal{ToolAllowlist: map[string][]string{}, AccessPolicy: "legacy_shared",
+		TokenHash: config.TokenDigest(managed), Key: &config.ClientKey{Name: "Batch test", Prefix: managed[:12], CreatedAt: "2026-10-13T12:00:00Z"}, Grants: map[string]map[string]config.Grant{}}
 	upstreamToken := backendToken
 	snap, err := db.CompareAndSwap(ctx, 0, cfg, map[string]*string{"demo": &upstreamToken})
 	if err != nil {

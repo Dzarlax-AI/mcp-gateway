@@ -48,3 +48,12 @@ Server instructions prefer direct known invocations and one search for unknown u
 - `GATEWAY_MCP_ACCESS_ENABLED` defaults false. Enabling requires `GATEWAY_PUBLIC_ORIGIN`, `GATEWAY_MCP_ACCESS_ISSUER`, `GATEWAY_MCP_ACCESS_AUD` and strict `GATEWAY_MCP_ACCESS_USER_MAP`.
 - `/mcp/oauth` verifies signed Access assertions and maps exact identities to existing principals. Native `/mcp` key authentication remains independent; no fallback from invalid assertions to native keys.
 - Synthetic tests are in `internal/accessauth` and `internal/gateway/access_oauth_test.go`. Public setup guidance and a variable-only Compose example are linked from `docs/deployment/chatgpt-oauth.md`; actual provider/client settings and deployment state require separate verification and authorization.
+
+## Agent ACL R1 (local implementation, 2026-10-24)
+- Registry JSON requires registry_version=2 and each principal's explicit access_policy and tool_allowlist. New keys are restricted and empty; migration preserves existing principals as legacy_shared. SQL schema stays2.
+- Restricted policy checks exact ACL before shared enablement. Legacy tool modes also require existing argument grants. Current identity, globals, endpoint and credential binding are checked before dispatch, including after initialize.
+- Explicit registry migrate-agent-acl defaults to dry-run; SQL apply requires expected revision, file apply requires offline mode and expected SHA-256. Runtime never upgrades documents; simplify is unsupported for v2. Unknown outcomes require inspection, never automatic retry.
+- Connection permission forms share existing auth/CSRF/Origin/CAS. Endpoint/delete and verified tool removal clear applicable ACL. Ordinary enable preserves legacy constraints.
+- GATEWAY_AUDIT_ENABLED defaults false; enabled mode requires private GATEWAY_AUDIT_DIR (0700/0600). Bounded local audit status is disabled/ok/degraded; sink failure does not undo or retry saved work. No payloads or credential material in events.
+- ACL PostgreSQL parity uses a separate disposable TEST_ACL_POSTGRES_DSN. Run node scripts/test_permission_actions.cjs alongside existing checks. Export includes ACL runbook/assets/tests, excludes private plans and operational state.
+- Approved scope is local implementation and synthetic checks only. No commit, push, deployment, Hermes or live client/provider changes are authorized. Runbook: docs/deployment/agent-acl.md.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"sort"
 	"strings"
 	"sync"
@@ -16,12 +17,16 @@ import (
 	"mcp-gateway/internal/upstream"
 )
 
-func (g *Gateway) cached(ctx context.Context, snapshot store.Snapshot, principal string, a input, operation string) *mcp.CallToolResult {
+func (g *Gateway) cached(ctx context.Context, snapshot store.Snapshot, principal string, a input, operation string, headers http.Header) *mcp.CallToolResult {
 	c, err := catalog.FromSnapshot(snapshot, a.Server)
 	if err != nil {
 		return failure(err)
 	}
 	tools, refreshed, err := g.Catalog.GetWithStatus(ctx, c, false)
+	if err != nil {
+		return failure(err)
+	}
+	snapshot, principal, _, err = g.admitOperation(ctx, headers, a, c, false)
 	if err != nil {
 		return failure(err)
 	}
@@ -59,6 +64,9 @@ func (g *Gateway) cached(ctx context.Context, snapshot store.Snapshot, principal
 		}
 		tool = find(tools)
 	}
+	if _, _, _, err = g.admitOperation(ctx, headers, a, c, false); err != nil {
+		return failure(err)
+	}
 	if tool == nil {
 		return failure(errors.New("tool unavailable"))
 	}
@@ -68,11 +76,18 @@ func (g *Gateway) cached(ctx context.Context, snapshot store.Snapshot, principal
 	if err = upstream.Validate(tool.InputSchema, a.Arguments); err != nil {
 		return failure(err)
 	}
+	if _, _, _, err = g.admitOperation(ctx, headers, a, c, true); err != nil {
+		return failure(err)
+	}
 	s, close, err := upstream.ConnectWithToken(ctx, c.Server, c.Token)
 	if err != nil {
 		return failure(err)
 	}
 	defer close()
+	if err = g.checkDispatch(ctx, headers, a, c, tool); err != nil {
+		return failure(err)
+	}
+	markDispatched(ctx)
 	res, err := s.CallTool(ctx, &mcp.CallToolParams{Name: a.Tool, Arguments: a.Arguments})
 	if err != nil {
 		g.Catalog.Invalidate(c.ID, c.Revision)
@@ -104,7 +119,7 @@ type searchResult struct {
 	Truncated   bool         `json:"results_truncated,omitempty"`
 }
 
-func (g *Gateway) search(ctx context.Context, snapshot store.Snapshot, principal string, a input) *mcp.CallToolResult {
+func (g *Gateway) search(ctx context.Context, snapshot store.Snapshot, principal string, a input, headers http.Header) *mcp.CallToolResult {
 	if g.Catalog == nil || strings.TrimSpace(a.Query) == "" || len(a.Query) > 512 {
 		return failure(ErrArguments)
 	}
@@ -162,17 +177,21 @@ func (g *Gateway) search(ctx context.Context, snapshot store.Snapshot, principal
 			if err == nil {
 				tools, err = g.Catalog.Get(ctx, c, false)
 			}
+			current, identity, _, authErr := g.admitOperation(ctx, headers, input{Server: id}, c, false)
 			mu.Lock()
 			defer mu.Unlock()
+			if authErr != nil {
+				return
+			}
 			if err != nil {
 				out.Complete = false
 				out.Unavailable = append(out.Unavailable, id)
 				return
 			}
-			server := snapshot.Config.Servers[id]
+			server := current.Config.Servers[id]
 			serverText := strings.ToLower(id + " " + server.Description + " " + strings.Join(server.Keywords, " "))
 			for _, t := range tools {
-				if _, err := policy.Grant(snapshot.Config, principal, id, t.Name); err != nil {
+				if _, err := policy.Grant(current.Config, identity, id, t.Name); err != nil {
 					continue
 				}
 				score := 0
@@ -199,6 +218,35 @@ func (g *Gateway) search(ctx context.Context, snapshot store.Snapshot, principal
 		}()
 	}
 	wg.Wait()
+	latest, e := g.snapshot(ctx)
+	if e != nil {
+		return failure(e)
+	}
+	identity, e := resolvePrincipal(ctx, latest.Config, headers)
+	if expected, ok := ctx.Value(admittedPrincipalKey{}).(string); e != nil || (ok && expected != identity) {
+		return failure(policy.ErrDenied)
+	}
+	filtered := candidates[:0]
+	for _, item := range candidates {
+		if _, e := policy.Grant(latest.Config, identity, item.ServerID, item.ToolName); e == nil {
+			old, _ := catalog.FromSnapshot(snapshot, item.ServerID)
+			next, er := catalog.FromSnapshot(latest, item.ServerID)
+			if er == nil && catalog.Fingerprint(old) == catalog.Fingerprint(next) {
+				filtered = append(filtered, item)
+			}
+		}
+	}
+	if len(filtered) != len(candidates) {
+		out.Complete = false
+	}
+	candidates = filtered
+	visible := out.Unavailable[:0]
+	for _, id := range out.Unavailable {
+		if policy.Visible(latest.Config, identity, id) {
+			visible = append(visible, id)
+		}
+	}
+	out.Unavailable = visible
 	sort.Strings(out.Unavailable)
 	if len(ids) > 0 && len(out.Unavailable) == len(ids) {
 		return failure(errors.New("available server catalogs could not be loaded"))
