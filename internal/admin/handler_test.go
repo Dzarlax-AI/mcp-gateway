@@ -32,7 +32,9 @@ func adminFixture(t *testing.T) (*handler, store.Store) {
 		t.Fatal(e)
 	}
 	t.Cleanup(func() { s.Close() })
-	c := &config.Config{Servers: map[string]config.Server{}, Principals: map[string]config.Principal{"codex": {TokenEnv: "ADMIN_TEST_CLIENT", Grants: map[string]map[string]config.Grant{}}}}
+	c := &config.Config{RegistryVersion: 2,
+		Servers: map[string]config.Server{}, Principals: map[string]config.Principal{"codex": {ToolAllowlist: map[string][]string{}, AccessPolicy: "legacy_shared",
+			TokenEnv: "ADMIN_TEST_CLIENT", Grants: map[string]map[string]config.Grant{}}}}
 	if _, e = s.CompareAndSwap(ctx, 0, c, nil); e != nil {
 		t.Fatal(e)
 	}

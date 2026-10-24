@@ -135,3 +135,7 @@ Set `GATEWAY_ADMIN_AUTH_MODE=authentik`, clear `GATEWAY_ADMIN_TOKEN`, and config
 Only a trusted, isolated proxy may supply `X-authentik-username` and `X-authentik-groups`. Strip incoming identity headers, run Authentik forward auth, then attach its response headers. Group values use pipe separators. Ensure clients and other containers cannot reach the admin listener from a trusted peer address. Forwarded client addresses do not grant trust.
 
 Protect only admin routes with SSO; the MCP route uses its own Bearer/X-API-Key authentication. Configure Authentik's callback/sign-out routes for your host. Verify real login, callback and an AJAX action after the session has aged; a healthy gateway alone does not prove SSO works.
+
+## Agent permissions
+
+Registry document v2 requires explicit per-principal policy and exact tool ACL. New keys start restricted with no access. OAuth and native credentials resolve to the same policy evaluator. Existing installations require a reviewed explicit migration; see the [ACL runbook](deployment/agent-acl.md). Local audit is opt-in and has explicit degraded status.

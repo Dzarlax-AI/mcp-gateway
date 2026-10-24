@@ -1,14 +1,25 @@
 {
-  "https_allowlist": ["https://developers.openai.com/mcp"],
+  "https_allowlist": [
+    "https://developers.openai.com/mcp"
+  ],
   "servers": {
     "openai-docs": {
       "description": "Public official OpenAI documentation; restricted read-only verification",
-      "keywords": ["openai", "docs", "codex", "documentation"],
+      "keywords": [
+        "openai",
+        "docs",
+        "codex",
+        "documentation"
+      ],
       "url": "https://developers.openai.com/mcp",
       "enabled": true,
       "tools": {
-        "search_openai_docs": {"enabled": true},
-        "fetch_openai_doc": {"enabled": true}
+        "search_openai_docs": {
+          "enabled": true
+        },
+        "fetch_openai_doc": {
+          "enabled": true
+        }
       }
     }
   },
@@ -18,17 +29,40 @@
       "grants": {
         "openai-docs": {
           "search_openai_docs": {
-            "allowed_arguments": ["query", "limit"],
-            "required_arguments": ["query", "limit"],
-            "argument_equals": {"query": "Codex MCP configuration", "limit": 3}
+            "allowed_arguments": [
+              "query",
+              "limit"
+            ],
+            "required_arguments": [
+              "query",
+              "limit"
+            ],
+            "argument_equals": {
+              "query": "Codex MCP configuration",
+              "limit": 3
+            }
           },
           "fetch_openai_doc": {
-            "allowed_arguments": ["url"],
-            "required_arguments": ["url"],
-            "argument_equals": {"url": "https://learn.chatgpt.com/docs/extend/mcp"}
+            "allowed_arguments": [
+              "url"
+            ],
+            "required_arguments": [
+              "url"
+            ],
+            "argument_equals": {
+              "url": "https://learn.chatgpt.com/docs/extend/mcp"
+            }
           }
         }
+      },
+      "access_policy": "restricted",
+      "tool_allowlist": {
+        "openai-docs": [
+          "search_openai_docs",
+          "fetch_openai_doc"
+        ]
       }
     }
-  }
+  },
+  "registry_version": 2
 }

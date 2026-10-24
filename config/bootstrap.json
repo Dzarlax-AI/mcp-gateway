@@ -3,7 +3,10 @@
   "principals": {
     "codex": {
       "token_env": "GATEWAY_CODEX_TOKEN",
-      "grants": {}
+      "grants": {},
+      "access_policy": "restricted",
+      "tool_allowlist": {}
     }
-  }
+  },
+  "registry_version": 2
 }

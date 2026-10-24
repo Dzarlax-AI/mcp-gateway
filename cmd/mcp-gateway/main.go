@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log"
 	"mcp-gateway/internal/admin"
+	"mcp-gateway/internal/audit"
 	"mcp-gateway/internal/catalog"
 	"mcp-gateway/internal/store"
 	"net"
@@ -36,6 +37,10 @@ func main() {
 	}
 }
 func run() error {
+	auditSink, e := audit.FromEnv()
+	if e != nil {
+		return e
+	}
 	addr := os.Getenv("GATEWAY_LISTEN_ADDR")
 	if addr == "" {
 		addr = "127.0.0.1:8080"
@@ -77,7 +82,7 @@ func run() error {
 	if e != nil {
 		return e
 	}
-	h, e := (&gateway.Gateway{Path: path, Store: registry, Catalog: catalogs, ReadBatch: batch, Timeout: 10 * time.Second, PublicOrigin: origin, AccessOAuth: oauth}).Handler()
+	h, e := (&gateway.Gateway{Path: path, Store: registry, Catalog: catalogs, ReadBatch: batch, Timeout: 10 * time.Second, PublicOrigin: origin, AccessOAuth: oauth, Audit: auditSink}).Handler()
 	if e != nil {
 		return e
 	}
@@ -109,6 +114,7 @@ func run() error {
 			return e
 		}
 		opts := adminOptions(adminOrigin)
+		opts.Audit = auditSink
 		opts.Catalog = catalogs
 		opts.BatchRegistry = batch != nil && batch.RegistryMode()
 		opts.MCPEndpoint = connectionEndpoint(addr, origin)

@@ -6,7 +6,8 @@ import (
 )
 
 func TestSharedEnablement(t *testing.T) {
-	c := &config.Config{Servers: map[string]config.Server{"s": {Enabled: true, Tools: map[string]config.Tool{"t": {Enabled: true, AccessMode: "shared"}}}}, Principals: map[string]config.Principal{"one": {}, "two": {}}}
+	c := &config.Config{RegistryVersion: 2,
+		Servers: map[string]config.Server{"s": {Enabled: true, Tools: map[string]config.Tool{"t": {Enabled: true, AccessMode: "shared"}}}}, Principals: map[string]config.Principal{"one": {ToolAllowlist: map[string][]string{}, AccessPolicy: "legacy_shared"}, "two": {ToolAllowlist: map[string][]string{}, AccessPolicy: "legacy_shared"}}}
 	for _, p := range []string{"one", "two"} {
 		g, err := Grant(c, p, "s", "t")
 		if err != nil || !Visible(c, p, "s") || !g.SchemaOnly || Arguments(g, map[string]any{"nested": map[string]any{"value": true}}) != nil {

@@ -66,7 +66,9 @@ func newFixtureAuth(t *testing.T, version, authHeader string) *fixture {
 	}))
 	t.Cleanup(back.Close)
 	grant := config.Grant{AllowedArguments: []string{"text"}, RequiredArguments: []string{"text"}}
-	f.config = config.Config{Servers: map[string]config.Server{"demo": {Enabled: true, Description: "Synthetic echo", Keywords: []string{"test"}, URL: back.URL + "/mcp", TokenEnv: "TEST_BACKEND_TOKEN", AuthHeader: authHeader, Tools: map[string]config.Tool{"echo": {Enabled: true}, "error": {Enabled: true}, "hidden": {Enabled: true}}}}, Principals: map[string]config.Principal{"local": {TokenEnv: "TEST_CLIENT_TOKEN", Grants: map[string]map[string]config.Grant{"demo": {"echo": grant, "error": grant}}}}}
+	f.config = config.Config{RegistryVersion: 2,
+		Servers: map[string]config.Server{"demo": {Enabled: true, Description: "Synthetic echo", Keywords: []string{"test"}, URL: back.URL + "/mcp", TokenEnv: "TEST_BACKEND_TOKEN", AuthHeader: authHeader, Tools: map[string]config.Tool{"echo": {Enabled: true}, "error": {Enabled: true}, "hidden": {Enabled: true}}}}, Principals: map[string]config.Principal{"local": {ToolAllowlist: map[string][]string{}, AccessPolicy: "legacy_shared",
+			TokenEnv: "TEST_CLIENT_TOKEN", Grants: map[string]map[string]config.Grant{"demo": {"echo": grant, "error": grant}}}}}
 	f.write()
 	handler, e := (&Gateway{Path: f.path, Timeout: 300 * time.Millisecond}).Handler()
 	if e != nil {

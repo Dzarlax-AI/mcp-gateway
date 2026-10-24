@@ -102,7 +102,7 @@
         if ([401,403,409].includes(response.status) || (response.status >= 500 && response.status !== 502)) uncertain = true;
         return;
       }
-      apply(await response.json()); status(card, 'Saved.');
+      const saved = await response.json(); apply(saved); status(card, saved.audit_status === 'degraded' ? 'Saved; audit unavailable.' : 'Saved.');
     } catch (_) {
       uncertain = true; status(card, 'Result unknown: the connection was interrupted. Refresh state before making another change.', true);
     } finally { button.removeAttribute('aria-busy'); lock(false); if (document.activeElement === document.body) button.focus({preventScroll: true}); }

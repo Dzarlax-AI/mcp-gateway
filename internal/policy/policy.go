@@ -13,7 +13,25 @@ import (
 var ErrDenied = errors.New("access denied")
 
 func Grant(c *config.Config, p, s, t string) (config.Grant, error) {
-	if _, ok := c.Principals[p]; !ok {
+	if c == nil || c.RegistryVersion != config.RegistryVersion {
+		return config.Grant{}, ErrDenied
+	}
+	principal, ok := c.Principals[p]
+	if !ok {
+		return config.Grant{}, ErrDenied
+	}
+	if principal.AccessPolicy == config.Restricted {
+		allowed := false
+		for _, name := range principal.ToolAllowlist[s] {
+			if name == t {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			return config.Grant{}, ErrDenied
+		}
+	} else if principal.AccessPolicy != config.LegacyShared {
 		return config.Grant{}, ErrDenied
 	}
 	srv, ok := c.Servers[s]

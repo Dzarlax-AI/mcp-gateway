@@ -47,7 +47,9 @@ func newConnectorFixture(t *testing.T, kind, location string) *connectorFixture 
 		t.Fatal(e)
 	}
 	t.Cleanup(func() { db.Close() })
-	cfg := &config.Config{Servers: map[string]config.Server{}, Principals: map[string]config.Principal{"client": {TokenEnv: "CONNECTOR_CLIENT", Grants: map[string]map[string]config.Grant{}}}}
+	cfg := &config.Config{RegistryVersion: 2,
+		Servers: map[string]config.Server{}, Principals: map[string]config.Principal{"client": {ToolAllowlist: map[string][]string{}, AccessPolicy: "legacy_shared",
+			TokenEnv: "CONNECTOR_CLIENT", Grants: map[string]map[string]config.Grant{}}}}
 	if _, e = db.CompareAndSwap(ctx, 0, cfg, nil); e != nil {
 		t.Fatal("requires empty test DB", e)
 	}
@@ -401,5 +403,35 @@ func TestConnectorBatchFreshRegistryDenials(t *testing.T) {
 				t.Fatal("fresh admission failed")
 			}
 		})
+	}
+}
+
+func TestConnectorBatchRestrictedACLRevocationAfterInitialize(t *testing.T) {
+	f := newConnectorFixture(t, "sqlite", filepath.Join(t.TempDir(), "registry.db"))
+	f.enable(t)
+	f.publish(t)
+	f.change(t, func(c *config.Config) {
+		p := c.Principals["client"]
+		p.AccessPolicy = config.Restricted
+		p.ToolAllowlist = map[string][]string{"ha": {"llm__GetDateTime"}}
+		c.Principals["client"] = p
+	})
+	if !f.batch(t, "llm__GetDateTime", 1) {
+		t.Fatal("restricted positive control")
+	}
+	before := f.calls.Load()
+	arrived, release := make(chan struct{}), make(chan struct{})
+	f.initializeHook.Store(&initializeHook{fn: func() { close(arrived); <-release }})
+	done := make(chan bool)
+	go func() { done <- f.batch(t, "llm__GetDateTime", 1) }()
+	<-arrived
+	f.change(t, func(c *config.Config) {
+		p := c.Principals["client"]
+		p.ToolAllowlist = map[string][]string{}
+		c.Principals["client"] = p
+	})
+	close(release)
+	if <-done || f.calls.Load() != before {
+		t.Fatal("revoked ACL dispatched registry batch")
 	}
 }

@@ -3,7 +3,9 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -114,8 +116,8 @@ func TestSearchSchemaBudgetAndStableTie(t *testing.T) {
 	if err = p.Publish(connection, 0, time.Now(), []*mcp.Tool{huge}); err != nil {
 		t.Fatal(err)
 	}
-	g := Gateway{Catalog: p}
-	res := g.search(context.Background(), snapshot, "local", input{Query: "echo"})
+	g := Gateway{Catalog: p, Path: f.path}
+	res := g.search(context.Background(), snapshot, "local", input{Query: "echo"}, http.Header{"Authorization": {"Bearer " + clientToken}})
 	out := searchResponse(t, res)
 	b, _ := json.Marshal(res)
 	if len(b) > searchBudget || len(out.Tools) != 1 || out.Tools[0].SchemaIncluded || out.Tools[0].Definition != nil || out.Tools[0].OmittedReason != "response_budget" {
@@ -123,12 +125,15 @@ func TestSearchSchemaBudgetAndStableTie(t *testing.T) {
 	}
 	// Ranking ties use names, never the randomized registry map order.
 	cfg.Servers["aaa"] = cfg.Servers["demo"]
-	cfg.Principals["local"] = config.Principal{TokenEnv: "TEST_CLIENT_TOKEN", Grants: map[string]map[string]config.Grant{"demo": cfg.Principals["local"].Grants["demo"], "aaa": cfg.Principals["local"].Grants["demo"]}}
+	cfg.Principals["local"] = config.Principal{ToolAllowlist: map[string][]string{}, AccessPolicy: "legacy_shared",
+		TokenEnv: "TEST_CLIENT_TOKEN", Grants: map[string]map[string]config.Grant{"demo": cfg.Principals["local"].Grants["demo"], "aaa": cfg.Principals["local"].Grants["demo"]}}
 	conn, _ := catalog.FromSnapshot(snapshot, "aaa")
 	if err = p.Publish(conn, 0, time.Now(), []*mcp.Tool{huge}); err != nil {
 		t.Fatal(err)
 	}
-	out = searchResponse(t, g.search(context.Background(), snapshot, "local", input{Query: "echo"}))
+	raw, _ := json.Marshal(cfg)
+	os.WriteFile(f.path, raw, 0600)
+	out = searchResponse(t, g.search(context.Background(), snapshot, "local", input{Query: "echo"}, http.Header{"Authorization": {"Bearer " + clientToken}}))
 	if len(out.Tools) != 2 || out.Tools[0].ServerID != "aaa" || out.Tools[1].ServerID != "demo" {
 		t.Fatal("tie order", out)
 	}

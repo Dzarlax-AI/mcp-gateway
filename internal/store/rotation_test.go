@@ -41,8 +41,10 @@ func rotationFixture(t *testing.T, kind, location string) (*DB, string) {
 	}
 	token := "mgw_" + strings.Repeat("r", 43)
 	hashOnly := "mgw_" + strings.Repeat("h", 43)
-	c.Principals["recoverable"] = config.Principal{TokenHash: config.TokenDigest(token), Key: &config.ClientKey{Name: "Synthetic", Prefix: token[:12], CreatedAt: "2026-10-14T12:00:00Z", Recoverable: true}}
-	c.Principals["hashonly"] = config.Principal{TokenHash: config.TokenDigest(hashOnly), Key: &config.ClientKey{Name: "Hash only", Prefix: hashOnly[:12], CreatedAt: "2026-10-14T12:00:00Z"}}
+	c.Principals["recoverable"] = config.Principal{ToolAllowlist: map[string][]string{}, AccessPolicy: "legacy_shared",
+		TokenHash: config.TokenDigest(token), Key: &config.ClientKey{Name: "Synthetic", Prefix: token[:12], CreatedAt: "2026-10-14T12:00:00Z", Recoverable: true}}
+	c.Principals["hashonly"] = config.Principal{ToolAllowlist: map[string][]string{}, AccessPolicy: "legacy_shared",
+		TokenHash: config.TokenDigest(hashOnly), Key: &config.ClientKey{Name: "Hash only", Prefix: hashOnly[:12], CreatedAt: "2026-10-14T12:00:00Z"}}
 	if _, e = s.CompareAndSwapClientKeys(ctx, 1, c, map[string]*string{"recoverable": &token}); e != nil {
 		t.Fatal(e)
 	}
