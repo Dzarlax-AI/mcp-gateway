@@ -1,7 +1,9 @@
 name: CI
 on:
   push:
+    branches: [main, security/2026-10-25-remediation]
   pull_request:
+    branches: [main]
 permissions:
   contents: read
 jobs:
@@ -143,12 +145,12 @@ jobs:
           retention-days: 1
           if-no-files-found: error
       - name: Sign in to GHCR
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'Dzarlax-AI/mcp-gateway'
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/security/2026-10-25-remediation') && github.repository == 'Dzarlax-AI/mcp-gateway'
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
-      - name: Publish commit image and verify private visibility
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'Dzarlax-AI/mcp-gateway'
+      - name: Publish immutable commit image and verify private visibility
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/security/2026-10-25-remediation') && github.repository == 'Dzarlax-AI/mcp-gateway'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -156,8 +158,11 @@ jobs:
           docker push "$IMAGE:$GITHUB_SHA"
           visibility=$(gh api orgs/Dzarlax-AI/packages/container/mcp-gateway --jq '.visibility')
           test "$visibility" = private
+      - name: Publish latest image
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'Dzarlax-AI/mcp-gateway'
+        run: |
           docker tag mcp-gateway:ci "$IMAGE:latest"
           docker push "$IMAGE:latest"
       - name: Sign out of GHCR
-        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'Dzarlax-AI/mcp-gateway'
+        if: always() && github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/security/2026-10-25-remediation') && github.repository == 'Dzarlax-AI/mcp-gateway'
         run: docker logout ghcr.io
