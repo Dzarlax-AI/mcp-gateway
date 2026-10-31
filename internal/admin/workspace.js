@@ -87,7 +87,7 @@
     const focused = document.activeElement;
     const focusRow = focused?.closest('[data-tool]');
     const focusName = focusHint?.name || focusRow?.dataset.tool;
-    let focusTarget = focusHint?.selector || ''; 
+    let focusTarget = focusHint?.selector || '';
     if (focused?.matches('[data-select]')) focusTarget = '[data-select]';
     else if (focused?.closest('[data-toggle]')) focusTarget = '[data-toggle] button';
     else if (focused?.matches('select[name=operation_kind]')) focusTarget = 'select[name=operation_kind]';
