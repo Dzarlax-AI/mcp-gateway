@@ -27,7 +27,7 @@ FILES = [
     'internal/readpolicy/contracts/home-assistant-v1.json',
     'scripts/codex_headers.py', 'scripts/codex_public_headers.py',
     'scripts/test_codex_public_headers.py', 'scripts/test_connection_actions.cjs', 'scripts/test_permission_actions.cjs',
-    'scripts/measure_read_batch.go', 'scripts/connector_batch_fixture.go',
+    'scripts/measure_read_batch.go', 'scripts/connector_batch_fixture.go', 'scripts/admin_workspace_fixture.go',
     'scripts/rotation_fixture.go', 'scripts/rotate_gateway_secrets.py',
     'scripts/test_rotate_gateway_secrets.py',
     'scripts/test_connector_batch_admin.cjs',

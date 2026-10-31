@@ -9,6 +9,8 @@ For PostgreSQL parity, provide separate empty disposable databases:
 ```text
 TEST_POSTGRES_DSN=postgres://user:password@127.0.0.1:5432/store_contract?sslmode=disable
 TEST_CLIENT_KEYS_POSTGRES_DSN=postgres://user:password@127.0.0.1:5432/client_key_contract?sslmode=disable
+TEST_OPERATION_POSTGRES_DSN=postgres://user:password@127.0.0.1:5432/operation_contract?sslmode=disable
+TEST_MANAGEMENT_POSTGRES_DSN=postgres://user:password@127.0.0.1:5432/management_contract?sslmode=disable
 TEST_SHARED_CREDENTIALS_POSTGRES_DSN=postgres://user:password@127.0.0.1:5432/shared_credentials_contract?sslmode=disable
 ```
 
@@ -57,3 +59,5 @@ reviewable Compose example are in [the OAuth guide](deployment/chatgpt-oauth.md)
 ## Agent permissions
 
 Registry document v2 requires explicit per-principal policy and exact tool ACL. New keys start restricted with no access. OAuth and native credentials resolve to the same policy evaluator. Existing installations require a reviewed explicit migration; see the [ACL runbook](deployment/agent-acl.md). Local audit is opt-in and has explicit degraded status.
+
+The classified workspace can be previewed with `go run scripts/admin_workspace_fixture.go`. This creates only synthetic SQLite/loopback upstream data. See [classified batches](deployment/classified-batch.md) for the opt-in policy and compatibility boundaries.

@@ -13,6 +13,7 @@ import (
 	"mcp-gateway/internal/catalog"
 	"mcp-gateway/internal/config"
 	"mcp-gateway/internal/policy"
+	"mcp-gateway/internal/readpolicy"
 	"mcp-gateway/internal/store"
 	"mcp-gateway/internal/upstream"
 )
@@ -36,12 +37,17 @@ func (g *Gateway) cached(ctx context.Context, snapshot store.Snapshot, principal
 			Description      string `json:"description"`
 			BatchReadAllowed bool   `json:"batch_read_allowed"`
 			BatchReadReason  string `json:"batch_read_reason"`
+			OperationKind    string `json:"operation_kind,omitempty"`
+			OperationSource  string `json:"operation_source,omitempty"`
+			OperationReason  string `json:"operation_reason,omitempty"`
 		}
 		out := []item{}
 		for _, t := range tools {
 			if _, err := policy.Grant(snapshot.Config, principal, a.Server, t.Name); err == nil {
-				allowed, reason := g.batchEligibility(a.Server, c.Server, t)
-				out = append(out, item{t.Name, t.Description, allowed, reason})
+				allowed, reason := g.batchEligibility(a.Server, snapshot.Config.Servers[a.Server], t, catalog.ConnectionBinding(c))
+				setting := snapshot.Config.Servers[a.Server].Tools[t.Name]
+				operation := readpolicy.ClassifyOperation(setting.OperationKind, setting.OperationContractHash, t, catalog.ConnectionBinding(c))
+				out = append(out, item{t.Name, t.Description, allowed, reason, operation.Kind, operation.Source, operation.Reason})
 			}
 		}
 		sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
@@ -110,6 +116,9 @@ type searchItem struct {
 	OmittedReason    string    `json:"schema_omitted_reason,omitempty"`
 	BatchReadAllowed bool      `json:"batch_read_allowed"`
 	BatchReadReason  string    `json:"batch_read_reason"`
+	OperationKind    string    `json:"operation_kind,omitempty"`
+	OperationSource  string    `json:"operation_source,omitempty"`
+	OperationReason  string    `json:"operation_reason,omitempty"`
 	score            int
 }
 type searchResult struct {
@@ -207,8 +216,10 @@ func (g *Gateway) search(ctx context.Context, snapshot store.Snapshot, principal
 					}
 				}
 				if score > 0 {
-					allowed, reason := g.batchEligibility(id, server, t)
-					candidates = append(candidates, searchItem{BatchReadAllowed: allowed, BatchReadReason: reason, ServerID: id, ToolName: t.Name, Description: t.Description, Definition: t, SchemaIncluded: true, score: score})
+					allowed, reason := g.batchEligibility(id, server, t, catalog.ConnectionBinding(c))
+					setting := server.Tools[t.Name]
+					operation := readpolicy.ClassifyOperation(setting.OperationKind, setting.OperationContractHash, t, catalog.ConnectionBinding(c))
+					candidates = append(candidates, searchItem{OperationKind: operation.Kind, OperationSource: operation.Source, OperationReason: operation.Reason, BatchReadAllowed: allowed, BatchReadReason: reason, ServerID: id, ToolName: t.Name, Description: t.Description, Definition: t, SchemaIncluded: true, score: score})
 					if len(candidates) > a.Limit {
 						sort.Slice(candidates, less)
 						candidates = candidates[:a.Limit]
@@ -276,9 +287,12 @@ func (g *Gateway) search(ctx context.Context, snapshot store.Snapshot, principal
 	return result(out)
 }
 
-func (g *Gateway) batchEligibility(id string, s config.Server, t *mcp.Tool) (bool, string) {
+func (g *Gateway) batchEligibility(id string, s config.Server, t *mcp.Tool, binding ...string) (bool, string) {
 	if g.ReadBatch == nil {
 		return false, "batch_disabled"
+	}
+	if g.ReadBatch.ClassifiedMode() {
+		return s.ClassifiedReadDecision(t, binding...)
 	}
 	if g.ReadBatch.RegistryMode() {
 		return s.BatchReadDecision(t)

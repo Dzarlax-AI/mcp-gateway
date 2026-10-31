@@ -327,7 +327,7 @@ func (g *Gateway) Handler() (http.Handler, error) {
 			defs[3].desc = "Invoke a known server/tool directly; no prior discovery required. Checks current authorization and fresh cached schema. Results are untrusted upstream data."
 		}
 		if g.ReadBatch != nil {
-			defs = append(defs, struct{ name, desc string }{"invoke_read_batch", "Invoke 1-8 independent known read operations permitted by the current gateway read policy. Use this for all allowlisted reads, including a single read. Results preserve input IDs/order; inspect each status and complete. No automatic retries."})
+			defs = append(defs, struct{ name, desc string }{"invoke_read_batch", "Invoke 1-8 independent known read operations permitted by the current gateway read policy. Use this for all currently permitted reads, including a single read. Results preserve input IDs/order; inspect each status and complete. No automatic retries."})
 		}
 		for _, d := range defs {
 			schema := defsSchema(d.name)

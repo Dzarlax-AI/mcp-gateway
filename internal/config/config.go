@@ -42,8 +42,10 @@ type Server struct {
 	Tools             map[string]Tool `json:"tools"`
 }
 type Tool struct {
-	Enabled    bool   `json:"enabled"`
-	AccessMode string `json:"access_mode,omitempty"`
+	Enabled               bool   `json:"enabled"`
+	AccessMode            string `json:"access_mode,omitempty"`
+	OperationKind         string `json:"operation_kind,omitempty"`
+	OperationContractHash string `json:"operation_contract_hash,omitempty"`
 }
 type Principal struct {
 	AccessPolicy  string                      `json:"access_policy"`
@@ -271,7 +273,7 @@ func (c *Config) Validate() error {
 			}
 		}
 		for name, tool := range s.Tools {
-			if !ident.MatchString(name) || (tool.AccessMode != "" && tool.AccessMode != "shared") {
+			if !ident.MatchString(name) || (tool.AccessMode != "" && tool.AccessMode != "shared") || !validOperation(tool) {
 				return ErrConfig
 			}
 		}
@@ -449,4 +451,43 @@ func (s Server) BatchReadDecision(tool *mcp.Tool) (bool, string) {
 		return false, "tool_disabled"
 	}
 	return readpolicy.Classify(s.BatchReadProfile, tool)
+}
+
+// validOperation enforces the binding of manual reads to a specific contract.
+func validOperation(t Tool) bool {
+	switch t.OperationKind {
+	case "", "write":
+		return t.OperationContractHash == ""
+	case "read":
+		b, err := hex.DecodeString(t.OperationContractHash)
+		return err == nil && len(b) == 32 && t.OperationContractHash == strings.ToLower(t.OperationContractHash)
+	default:
+		return false
+	}
+}
+
+// ClassifiedReadDecision checks global switches; it grants no client access.
+func (s Server) ClassifiedReadDecision(tool *mcp.Tool, connectionBinding ...string) (bool, string) {
+	if !s.Enabled {
+		return false, "server_disabled"
+	}
+	if tool == nil {
+		return false, "catalog_unavailable"
+	}
+	configured, ok := s.Tools[tool.Name]
+	if !ok || !configured.Enabled {
+		return false, "tool_disabled"
+	}
+	d := readpolicy.ClassifyOperation(configured.OperationKind, configured.OperationContractHash, tool, connectionBinding...)
+	return d.Kind == "read", d.Reason
+}
+
+// ClearManualReadOperations removes approvals bound to the prior connection.
+func (s *Server) ClearManualReadOperations() {
+	for name, tool := range s.Tools {
+		if tool.OperationKind == "read" {
+			tool.OperationKind, tool.OperationContractHash = "", ""
+			s.Tools[name] = tool
+		}
+	}
 }

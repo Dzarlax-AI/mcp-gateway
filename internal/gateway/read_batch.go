@@ -226,7 +226,7 @@ func (b *ReadBatchExecutor) execute(ctx context.Context, g *Gateway, headers htt
 	var checkedTool *mcp.Tool
 	admit := func() (store.Snapshot, string, catalog.Connection, error) {
 		snap, principal, c, err := readBatchAdmit(ctx, g, b.policy, headers, op, args)
-		if err == nil && b.policy.Registry && checkedTool != nil {
+		if err == nil && (b.policy.Registry || b.policy.Classified) && checkedTool != nil {
 			latest, e := g.Catalog.Get(ctx, c, false)
 			if e != nil {
 				err = e
@@ -234,7 +234,7 @@ func (b *ReadBatchExecutor) execute(ctx context.Context, g *Gateway, headers htt
 				err = readBatchDenied
 				for _, t := range latest {
 					if t.Name == checkedTool.Name {
-						if allowed, _ := c.Server.BatchReadDecision(t); allowed {
+						if allowed, _ := g.batchEligibility(c.ID, c.Server, t, catalog.ConnectionBinding(c)); allowed && upstream.Validate(t.InputSchema, args) == nil {
 							err = nil
 						}
 						break
@@ -282,6 +282,11 @@ func (b *ReadBatchExecutor) execute(ctx context.Context, g *Gateway, headers htt
 		return r
 	}
 	checkedTool = tool
+	if b.policy.Classified {
+		if allowed, _ := conn.Server.ClassifiedReadDecision(tool, catalog.ConnectionBinding(conn)); !allowed {
+			return r
+		}
+	}
 	if b.policy.Registry {
 		if allowed, _ := conn.Server.BatchReadDecision(tool); !allowed || !readpolicy.Arguments(tool, args) {
 			return r
@@ -378,7 +383,7 @@ func readBatchAdmit(ctx context.Context, g *Gateway, p *ReadBatchPolicy, headers
 		return snapshot, "", catalog.Connection{}, readBatchDenied
 	}
 	server, ok := snapshot.Config.Servers[op.ServerID]
-	if !ok || p == nil || (!p.Registry && p.Allows(op.ServerID, op.ToolName, server.URL) != nil) || (p.Registry && (!server.BatchReadEnabled || server.BatchReadEndpoint != server.URL)) {
+	if !ok || p == nil || (!p.Registry && !p.Classified && p.Allows(op.ServerID, op.ToolName, server.URL) != nil) || (p.Registry && (!server.BatchReadEnabled || server.BatchReadEndpoint != server.URL)) {
 		return snapshot, "", catalog.Connection{}, readBatchDenied
 	}
 	conn, err := catalog.FromSnapshot(snapshot, op.ServerID)
@@ -424,4 +429,8 @@ func serializedSize(v any) int {
 
 func (b *ReadBatchExecutor) RegistryMode() bool {
 	return b != nil && b.policy != nil && b.policy.Registry
+}
+
+func (b *ReadBatchExecutor) ClassifiedMode() bool {
+	return b != nil && b.policy != nil && b.policy.Classified
 }
