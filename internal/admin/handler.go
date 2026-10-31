@@ -426,6 +426,11 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Registry changed. Reload before saving.", 409)
 		return
 	}
+	if errors.Is(e, store.ErrSecret) {
+		h.auditMutation(w, snap, snap, user, "server_change", "", "rejected")
+		h.inputError(w, r, snap, sess.csrf, user, "Credential rejected. Check its format and use a value different from gateway client keys. No changes were saved.", 400)
+		return
+	}
 	if e != nil {
 		h.auditMutation(w, snap, snap, user, "server_change", "", "unknown")
 		http.Error(w, "Change could not be confirmed. Reload before retrying.", 503)

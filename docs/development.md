@@ -4,11 +4,12 @@ Go version comes from `go.mod`; dependency versions are pinned in `go.mod`/`go.s
 
 Run `go test ./...`, `go test -race ./...`, `go vet ./...`, the Python unit tests and `node scripts/test_connection_actions.cjs`. Test environments must permit local TCP listeners. PostgreSQL tests are skipped when their DSNs are unset; SQLite still runs.
 
-For PostgreSQL parity, provide two separate empty disposable databases:
+For PostgreSQL parity, provide separate empty disposable databases:
 
 ```text
 TEST_POSTGRES_DSN=postgres://user:password@127.0.0.1:5432/store_contract?sslmode=disable
 TEST_CLIENT_KEYS_POSTGRES_DSN=postgres://user:password@127.0.0.1:5432/client_key_contract?sslmode=disable
+TEST_SHARED_CREDENTIALS_POSTGRES_DSN=postgres://user:password@127.0.0.1:5432/shared_credentials_contract?sslmode=disable
 ```
 
 These are illustrative local test DSNs. The contract suites modify schema and data. Use distinct databases, especially under parallel execution. GitHub CI supplies two disposable PostgreSQL services and runs the race-enabled Go suite, vet, builds, Python tests and the JavaScript harness. CI uses synthetic test credentials and no production secrets.
