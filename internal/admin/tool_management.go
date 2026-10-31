@@ -26,7 +26,7 @@ func serverPathParts(path string) []string {
 func isServerDetailPath(path string) bool { return len(serverPathParts(path)) == 1 }
 func isBulkToolPath(path string) bool {
 	p := serverPathParts(path)
-	return len(p) == 2 && (p[1] == "bulk-enable" || p[1] == "bulk-disable")
+	return len(p) == 2 && (p[1] == "bulk-enable" || p[1] == "bulk-disable" || p[1] == "bulk-operation")
 }
 func (h *handler) returnURL(r *http.Request, id string) string {
 	list := h.a.basePath + "/admin/servers"
@@ -82,7 +82,7 @@ func (h *handler) managementError(w http.ResponseWriter, r *http.Request, snap s
 
 func (h *handler) toolManagement(w http.ResponseWriter, r *http.Request, snap store.Snapshot, csrf, user string) bool {
 	parts := serverPathParts(r.URL.Path)
-	if len(parts) != 2 || (parts[1] != "bulk-enable" && parts[1] != "bulk-disable" && parts[1] != "tool-operation") {
+	if len(parts) != 2 || (parts[1] != "bulk-enable" && parts[1] != "bulk-disable" && parts[1] != "tool-operation" && parts[1] != "bulk-operation") {
 		return false
 	}
 	if !h.batchClassified {
@@ -151,53 +151,89 @@ func (h *handler) toolManagement(w http.ResponseWriter, r *http.Request, snap st
 			fail("Invalid operation group.", 400)
 			return true
 		}
-		if action == "bulk-disable" && group != "" {
-			conn, err := catalog.FromSnapshot(snap, id)
-			if err != nil {
-				fail("Connection unavailable. Refresh the selection.", 409)
+		if action == "bulk-operation" {
+			kinds, present := r.Form["operation_kind"]
+			if !present || len(kinds) != 1 || (kinds[0] != "" && kinds[0] != "read" && kinds[0] != "write") {
+				fail("Choose Read, Write or Automatic for the selected tools.", 400)
 				return true
 			}
-			metadata, _ := h.catalog.Peek(conn)
-			defs := map[string]*mcp.Tool{}
-			for _, tool := range metadata.Tools {
-				defs[tool.Name] = tool
+			kind := kinds[0]
+			hashes := map[string]string{}
+			if kind == "read" {
+				p, checked, err := h.managementCatalog(r, snap, id)
+				if err != nil {
+					fail("Could not verify the current tool catalog. No classifications were saved.", 502)
+					return true
+				}
+				conn, err := catalog.FromSnapshot(snap, id)
+				if err != nil {
+					fail("Connection unavailable.", 503)
+					return true
+				}
+				for _, name := range names {
+					hash, err := readpolicy.OperationFingerprint(p.tools[name], catalog.ConnectionBinding(conn))
+					if err != nil || r.Form.Get("contract."+name) != hash {
+						fail("A selected tool definition changed or is unavailable. Refresh before marking the selection as reads. No classifications were saved.", 409)
+						return true
+					}
+					hashes[name] = hash
+				}
+				next, fresh = &p, checked
 			}
 			for _, name := range names {
 				setting := server.Tools[name]
-				d := readpolicy.ClassifyOperation(setting.OperationKind, setting.OperationContractHash, defs[name], catalog.ConnectionBinding(conn))
-				if d.Kind != group {
-					fail("The type of a selected tool changed. Refresh the selection before disabling it.", 409)
+				setting.OperationKind, setting.OperationContractHash = kind, hashes[name]
+				server.Tools[name] = setting
+			}
+		} else {
+			if action == "bulk-disable" && group != "" {
+				conn, err := catalog.FromSnapshot(snap, id)
+				if err != nil {
+					fail("Connection unavailable. Refresh the selection.", 409)
 					return true
 				}
+				metadata, _ := h.catalog.Peek(conn)
+				defs := map[string]*mcp.Tool{}
+				for _, tool := range metadata.Tools {
+					defs[tool.Name] = tool
+				}
+				for _, name := range names {
+					setting := server.Tools[name]
+					d := readpolicy.ClassifyOperation(setting.OperationKind, setting.OperationContractHash, defs[name], catalog.ConnectionBinding(conn))
+					if d.Kind != group {
+						fail("The type of a selected tool changed. Refresh the selection before disabling it.", 409)
+						return true
+					}
+				}
 			}
-		}
-		if action == "bulk-enable" {
-			p, checked, err := h.managementCatalog(r, snap, id)
-			if err != nil {
-				fail("Connection check failed. No selected tools were enabled.", 502)
-				return true
+			if action == "bulk-enable" {
+				p, checked, err := h.managementCatalog(r, snap, id)
+				if err != nil {
+					fail("Connection check failed. No selected tools were enabled.", 502)
+					return true
+				}
+				for _, name := range names {
+					tool := p.tools[name]
+					if tool == nil {
+						fail("A selected tool is missing from the current catalog. No changes were saved.", 409)
+						return true
+					}
+					setting := server.Tools[name]
+					conn, _ := catalog.FromSnapshot(snap, id)
+					d := readpolicy.ClassifyOperation(setting.OperationKind, setting.OperationContractHash, tool, catalog.ConnectionBinding(conn))
+					if group != "" && d.Kind != group {
+						fail("The type of a selected tool changed. Refresh and review the selection before enabling it.", 409)
+						return true
+					}
+				}
+				reconcileCatalogACL(c, id, &server, p.tools)
+				next, fresh = &p, checked
 			}
 			for _, name := range names {
-				tool := p.tools[name]
-				if tool == nil {
-					fail("A selected tool is missing from the current catalog. No changes were saved.", 409)
-					return true
-				}
 				setting := server.Tools[name]
-				conn, _ := catalog.FromSnapshot(snap, id)
-				d := readpolicy.ClassifyOperation(setting.OperationKind, setting.OperationContractHash, tool, catalog.ConnectionBinding(conn))
-				if group != "" && d.Kind != group {
-					fail("The type of a selected tool changed. Refresh and review the selection before enabling it.", 409)
-					return true
-				}
+				setting.Enabled = action == "bulk-enable"
+				server.Tools[name] = setting
 			}
-			reconcileCatalogACL(c, id, &server, p.tools)
-			next, fresh = &p, checked
-		}
-		for _, name := range names {
-			setting := server.Tools[name]
-			setting.Enabled = action == "bulk-enable"
-			server.Tools[name] = setting
 		}
 	}
 	c.Servers[id] = server

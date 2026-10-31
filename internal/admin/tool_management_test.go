@@ -268,3 +268,133 @@ func TestClassifiedManagementPostgres(t *testing.T) {
 		t.Fatal("postgres classification reopen", err)
 	}
 }
+
+func TestBulkOperationAtomicReadAndOfflineReset(t *testing.T) {
+	h, s, defs := managementFixture(t)
+	cookie, csrf := login(t, h)
+	snap, _ := s.ReadSnapshot(context.Background())
+	conn, _ := catalog.FromSnapshot(snap, "test")
+	form := url.Values{"csrf": {csrf}, "revision": {fmt.Sprint(snap.Revision)}, "tools": {"read_a", "write_x"}, "operation_kind": {"read"}}
+	for _, tool := range []*mcp.Tool{defs[0], defs[2]} {
+		hash, _ := readpolicy.OperationFingerprint(tool, catalog.ConnectionBinding(conn))
+		form.Set("contract."+tool.Name, hash)
+	}
+	w := request(h, "POST", "/admin/servers/test/bulk-operation", form, cookie)
+	if w.Code != 303 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	after, _ := s.ReadSnapshot(context.Background())
+	if after.Revision != snap.Revision+1 {
+		t.Fatal("not one CAS")
+	}
+	for _, name := range form["tools"] {
+		a := after.Config.Servers["test"].Tools[name]
+		b := snap.Config.Servers["test"].Tools[name]
+		if a.OperationKind != "read" || a.OperationContractHash == "" || a.Enabled != b.Enabled || a.AccessMode != b.AccessMode {
+			t.Fatal("bad classification or switch delta", name)
+		}
+	}
+	if after.Config.Servers["test"].Tools["read_b"].OperationKind != "" {
+		t.Fatal("unselected tool changed")
+	}
+	h.catalog.Invalidate("test", after.Revision)
+	for _, kind := range []string{"write", ""} {
+		before, _ := s.ReadSnapshot(context.Background())
+		form.Set("revision", fmt.Sprint(before.Revision))
+		form.Set("operation_kind", kind)
+		w = request(h, "POST", "/admin/servers/test/bulk-operation", form, cookie)
+		if w.Code != 303 {
+			t.Fatal("offline classification failed", kind, w.Code)
+		}
+		end, _ := s.ReadSnapshot(context.Background())
+		if end.Revision != before.Revision+1 {
+			t.Fatal("not one offline CAS")
+		}
+		for _, name := range form["tools"] {
+			setting := end.Config.Servers["test"].Tools[name]
+			if setting.OperationKind != kind || setting.OperationContractHash != "" {
+				t.Fatal("reset did not clear read approval")
+			}
+		}
+	}
+}
+
+func TestBulkOperationRejectsEntireSelection(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		edit func(url.Values)
+		code int
+	}{
+		{"stale second contract", func(f url.Values) { f.Set("contract.read_b", strings.Repeat("a", 64)) }, 409},
+		{"missing contract", func(f url.Values) { f.Del("contract.read_a") }, 409},
+		{"missing selected tool", func(f url.Values) { f.Add("tools", "missing") }, 409},
+		{"repeated tool", func(f url.Values) { f.Add("tools", "read_a") }, 400},
+		{"empty selection", func(f url.Values) { f.Del("tools") }, 400},
+		{"too many", func(f url.Values) { f["tools"] = make([]string, 501) }, 400},
+		{"invalid kind", func(f url.Values) { f.Set("operation_kind", "other") }, 400},
+		{"missing kind", func(f url.Values) { f.Del("operation_kind") }, 400},
+		{"duplicate kind", func(f url.Values) { f.Add("operation_kind", "write") }, 400},
+		{"duplicate hash", func(f url.Values) { f.Add("contract.read_a", "other") }, 400},
+		{"stale revision", func(f url.Values) { f.Set("revision", "1") }, 409},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h, s, defs := managementFixture(t)
+			cookie, csrf := login(t, h)
+			before, _ := s.ReadSnapshot(context.Background())
+			conn, _ := catalog.FromSnapshot(before, "test")
+			form := url.Values{"csrf": {csrf}, "revision": {fmt.Sprint(before.Revision)}, "tools": {"read_a", "read_b"}, "operation_kind": {"read"}}
+			for _, tool := range defs[:2] {
+				hash, _ := readpolicy.OperationFingerprint(tool, catalog.ConnectionBinding(conn))
+				form.Set("contract."+tool.Name, hash)
+			}
+			tc.edit(form)
+			w := request(h, "POST", "/admin/servers/test/bulk-operation", form, cookie)
+			after, _ := s.ReadSnapshot(context.Background())
+			if w.Code != tc.code || after.Revision != before.Revision || after.Config.Servers["test"].Tools["read_a"].OperationKind != "" {
+				t.Fatal("partial or unexpected commit", w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestBulkOperationUnknownOutcomeDoesNotRetry(t *testing.T) {
+	h, s, _ := managementFixture(t)
+	cookie, csrf := login(t, h)
+	before, _ := s.ReadSnapshot(context.Background())
+	fault := &permissionUnknownStore{Store: s}
+	h.s = fault
+	w := request(h, "POST", "/admin/servers/test/bulk-operation", url.Values{"csrf": {csrf}, "revision": {fmt.Sprint(before.Revision)}, "tools": {"read_a", "read_b"}, "operation_kind": {"write"}}, cookie)
+	after, _ := s.ReadSnapshot(context.Background())
+	if w.Code != 503 || fault.calls != 1 || after.Revision != before.Revision+1 || after.Config.Servers["test"].Tools["read_b"].OperationKind != "write" {
+		t.Fatal("unknown outcome retried or not atomic", w.Code)
+	}
+}
+
+func TestBulkOperationFiveHundredToolsOneCommit(t *testing.T) {
+	h, s, _ := managementFixture(t)
+	cookie, csrf := login(t, h)
+	snap, _ := s.ReadSnapshot(context.Background())
+	server := snap.Config.Servers["test"]
+	server.Tools = map[string]config.Tool{}
+	names := []string{}
+	for i := 0; i < 500; i++ {
+		name := fmt.Sprintf("tool_%03d", i)
+		names = append(names, name)
+		server.Tools[name] = config.Tool{AccessMode: "shared", Enabled: i%2 == 0}
+	}
+	snap.Config.Servers["test"] = server
+	snap, err := s.CompareAndSwap(context.Background(), snap.Revision, snap.Config, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := request(h, "POST", "/admin/servers/test/bulk-operation", url.Values{"csrf": {csrf}, "revision": {fmt.Sprint(snap.Revision)}, "tools": names, "operation_kind": {"write"}}, cookie)
+	after, _ := s.ReadSnapshot(context.Background())
+	if w.Code != 303 || after.Revision != snap.Revision+1 {
+		t.Fatal(w.Code, "not one commit")
+	}
+	for name, setting := range after.Config.Servers["test"].Tools {
+		if setting.OperationKind != "write" || setting.Enabled != server.Tools[name].Enabled {
+			t.Fatal("wrong setting", name)
+		}
+	}
+}

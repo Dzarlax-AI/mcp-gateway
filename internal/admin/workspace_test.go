@@ -15,7 +15,7 @@ func TestWorkspaceTemplateGroupsAndForms(t *testing.T) {
 		t.Fatal(err)
 	}
 	html := out.String()
-	for _, want := range []string{"Read · automatic", `name="tools"`, `/gateway/admin/servers/demo/bulk-enable`, `/gateway/admin/servers/demo/tool-operation`, `name="contract_hash"`, `data-group="unknown"`} {
+	for _, want := range []string{"Read · automatic", `name="tools"`, `/gateway/admin/servers/demo/bulk-enable`, `/gateway/admin/servers/demo/tool-operation`, `name="contract_hash"`, `data-group="unknown"`, `/gateway/admin/servers/demo/bulk-operation`, `name="contract.list_items"`, `name="operation_kind" value="read"`, `name="operation_kind" value="write"`} {
 		if !strings.Contains(html, want) {
 			t.Errorf("missing %q", want)
 		}
