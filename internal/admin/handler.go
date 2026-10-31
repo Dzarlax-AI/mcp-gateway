@@ -31,6 +31,7 @@ var identifier = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127}$`)
 
 type Options struct {
 	Audit             *audit.Sink
+	BatchClassified   bool
 	BatchRegistry     bool
 	Catalog           *catalog.Provider
 	MCPEndpoint       string
@@ -50,16 +51,17 @@ type probe struct {
 	failed   bool
 }
 type handler struct {
-	audit         *audit.Sink
-	batchRegistry bool
-	catalog       *catalog.Provider
-	s             store.Store
-	a             *auth
-	mu            sync.Mutex
-	probes        map[string]probe
-	tpl           *template.Template
-	connectionTpl *template.Template
-	mcpEndpoint   string
+	audit           *audit.Sink
+	batchClassified bool
+	batchRegistry   bool
+	catalog         *catalog.Provider
+	s               store.Store
+	a               *auth
+	mu              sync.Mutex
+	probes          map[string]probe
+	tpl             *template.Template
+	connectionTpl   *template.Template
+	mcpEndpoint     string
 }
 
 func New(s store.Store, o Options) (http.Handler, error) {
@@ -97,7 +99,7 @@ func New(s store.Store, o Options) (http.Handler, error) {
 			return nil, errInput
 		}
 	}
-	return &handler{audit: o.Audit, batchRegistry: o.BatchRegistry, s: s, a: a, catalog: o.Catalog, probes: map[string]probe{}, mcpEndpoint: o.MCPEndpoint, connectionTpl: template.Must(template.New("connection").Parse(connectionTemplate)), tpl: template.Must(template.New("page").Parse(strings.ReplaceAll(pageTemplate, `"/admin`, `"{{$.BasePath}}/admin`)))}, nil
+	return &handler{batchClassified: o.BatchClassified, audit: o.Audit, batchRegistry: o.BatchRegistry, s: s, a: a, catalog: o.Catalog, probes: map[string]probe{}, mcpEndpoint: o.MCPEndpoint, connectionTpl: template.Must(template.New("connection").Parse(connectionTemplate)), tpl: template.Must(template.New("page").Parse(strings.ReplaceAll(pageTemplate, `"/admin`, `"{{$.BasePath}}/admin`)))}, nil
 }
 func equal(a, b string) bool { return b != "" && subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1 }
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -122,7 +124,10 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Invalid or oversized form", 400)
 			return
 		}
-		for _, v := range r.PostForm {
+		for name, v := range r.PostForm {
+			if name == "tools" && isBulkToolPath(r.URL.Path) {
+				continue
+			}
 			if len(v) != 1 {
 				http.Error(w, "Duplicate form field", 400)
 				return
@@ -190,6 +195,11 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, h.a.basePath+"/admin/servers", 303)
 		return
 	}
+	if r.Method == "GET" && r.URL.Path == "/admin/workspace.js" {
+		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+		_, _ = w.Write([]byte(workspaceJS))
+		return
+	}
 	if r.Method == "GET" && r.URL.Path == "/admin/actions.js" {
 		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
 		_, _ = w.Write([]byte(actionsJS))
@@ -215,6 +225,14 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.connection(w, r, snap, sess, user)
 		return
 	}
+	if h.batchClassified && r.Method == "GET" && (r.URL.Path == "/admin/servers" || isServerDetailPath(r.URL.Path)) {
+		if wantsJSON(r) {
+			h.actionState(w, snap)
+			return
+		}
+		h.renderWorkspace(w, r, snap, sess.csrf, user)
+		return
+	}
 	if r.Method == "GET" && r.URL.Path == "/admin/servers" {
 		if wantsJSON(r) {
 			h.actionState(w, snap)
@@ -232,7 +250,10 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	rev, e := strconv.ParseInt(r.Form.Get("revision"), 10, 64)
 	if e != nil || rev != snap.Revision {
-		http.Error(w, "Registry changed. Reload before saving.", 409)
+		h.inputError(w, r, snap, sess.csrf, user, "Registry changed. Reload before saving.", 409)
+		return
+	}
+	if h.toolManagement(w, r, snap, sess.csrf, user) {
 		return
 	}
 	c := clone(snap.Config)
@@ -347,6 +368,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if server.URL != oldURL || server.AuthHeader != oldHeader || server.TokenEnv != oldEnv || server.TokenRef != oldRef || len(secrets) > 0 {
 				server.BatchReadEnabled = false
 				server.BatchReadEndpoint = ""
+				server.ClearManualReadOperations()
 			}
 			c.Servers[id] = server
 
@@ -452,7 +474,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.actionState(w, saved)
 		return
 	}
-	http.Redirect(w, r, h.a.basePath+"/admin/servers", 303)
+	http.Redirect(w, r, h.returnURL(r, id), 303)
 }
 func clone(c *config.Config) *config.Config {
 	b, _ := json.Marshal(c)
@@ -616,6 +638,12 @@ func (h *handler) check(ctx context.Context, snap store.Snapshot, id string, ser
 }
 
 func (h *handler) inputError(w http.ResponseWriter, r *http.Request, snap store.Snapshot, csrf, user, message string, status int) {
+	if h.batchClassified && !wantsJSON(r) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(status)
+		h.renderWorkspaceError(w, r, snap, csrf, user, message, status)
+		return
+	}
 	if wantsJSON(r) {
 		http.Error(w, message, status)
 		return
@@ -635,36 +663,43 @@ func (h *handler) inputError(w http.ResponseWriter, r *http.Request, snap store.
 }
 
 type toolView struct {
-	Name, Description, Schema string
-	Enabled                   bool
-	BatchAllowed              bool
-	BatchReason               string
+	Selected                                                                                    bool
+	Name, Description, Schema                                                                   string
+	OperationKind, OperationSource, OperationReason, OperationLabel, ManualKind, DefinitionHash string
+	Enabled                                                                                     bool
+	BatchAllowed                                                                                bool
+	BatchReason                                                                                 string
 }
 type serverView struct {
-	ID            string
-	Server        config.Server
-	Secret        bool
-	Checked       string
-	Failed        string
-	Tools         []toolView
-	EnabledTools  int
-	BatchRegistry bool
-	BatchCount    int
+	ID                         string
+	Server                     config.Server
+	Secret                     bool
+	Checked                    string
+	Failed                     string
+	Tools                      []toolView
+	EnabledTools               int
+	BatchClassified            bool
+	CatalogKnown, CatalogFresh bool
+	CatalogAt                  string
+	BatchRegistry              bool
+	BatchCount                 int
 }
 type page struct {
-	BasePath  string
-	Error     string
-	Draft     map[string]string
-	Login     bool
-	User      string
-	Authentik bool
-	CSRF      string
-	Revision  int64
-	Servers   []serverView
+	Uncertain       bool
+	BatchClassified bool
+	BasePath        string
+	Error           string
+	Draft           map[string]string
+	Login           bool
+	User            string
+	Authentik       bool
+	CSRF            string
+	Revision        int64
+	Servers         []serverView
 }
 
 func (h *handler) view(s store.Snapshot, csrf string) page {
-	v := page{CSRF: csrf, Revision: s.Revision, BasePath: h.a.basePath}
+	v := page{BatchClassified: h.batchClassified, CSRF: csrf, Revision: s.Revision, BasePath: h.a.basePath}
 	ids := []string{}
 	for id := range s.Config.Servers {
 		ids = append(ids, id)
@@ -672,7 +707,7 @@ func (h *handler) view(s store.Snapshot, csrf string) page {
 	sort.Strings(ids)
 	for _, id := range ids {
 		server := s.Config.Servers[id]
-		sv := serverView{BatchRegistry: h.batchRegistry, ID: id, Server: server, Secret: server.TokenEnv != "" || server.TokenRef != ""}
+		sv := serverView{BatchClassified: h.batchClassified, BatchRegistry: h.batchRegistry, ID: id, Server: server, Secret: server.TokenEnv != "" || server.TokenRef != ""}
 		p, ok := h.currentProbe(id, s)
 		if p.failed && p.revision == s.Revision {
 			sv.Failed = p.at.Format(time.RFC3339)
@@ -680,6 +715,23 @@ func (h *handler) view(s store.Snapshot, csrf string) page {
 
 		if ok {
 			sv.Checked = p.at.Format(time.RFC3339)
+		}
+		binding := ""
+		metadata := map[string]*mcp.Tool{}
+		if h.batchClassified {
+			sv.Checked = ""
+			if conn, err := catalog.FromSnapshot(s, id); err == nil {
+				binding = catalog.ConnectionBinding(conn)
+				if cached, found := h.catalog.Peek(conn); found {
+					sv.CatalogKnown, sv.CatalogFresh, sv.CatalogAt = true, cached.Fresh, cached.At.Format(time.RFC3339)
+					if cached.Fresh {
+						sv.Checked = sv.CatalogAt
+					}
+					for _, tool := range cached.Tools {
+						metadata[tool.Name] = tool
+					}
+				}
+			}
 		}
 		names := []string{}
 		for name := range server.Tools {
@@ -696,7 +748,25 @@ func (h *handler) view(s store.Snapshot, csrf string) page {
 				schema, _ := json.MarshalIndent(tool.InputSchema, "", "  ")
 				tv.Description, tv.Schema = tool.Description, string(schema)
 			}
-			if h.batchRegistry {
+			if h.batchClassified {
+				setting := server.Tools[name]
+				tv.ManualKind = setting.OperationKind
+				var current *mcp.Tool
+				if sv.CatalogFresh {
+					current = metadata[name]
+				}
+				decision := readpolicy.ClassifyOperation(setting.OperationKind, setting.OperationContractHash, metadata[name], binding)
+				tv.OperationKind, tv.OperationSource, tv.OperationReason = decision.Kind, decision.Source, decision.Reason
+				tv.OperationLabel = operationLabel(decision)
+				if definition := metadata[name]; definition != nil {
+					tv.DefinitionHash, _ = readpolicy.OperationFingerprint(definition, binding)
+				}
+				if tool := metadata[name]; tool != nil {
+					schema, _ := json.MarshalIndent(tool.InputSchema, "", "  ")
+					tv.Description, tv.Schema = tool.Description, string(schema)
+				}
+				tv.BatchAllowed, tv.BatchReason = server.ClassifiedReadDecision(current, binding)
+			} else if h.batchRegistry {
 				tv.BatchAllowed, tv.BatchReason = server.BatchReadDecision(p.tools[name])
 				if !ok {
 					tv.BatchAllowed = false
@@ -754,14 +824,18 @@ func (h *handler) currentProbe(id string, s store.Snapshot) (probe, bool) {
 // Only display metadata is returned. Credential sources and values never enter this response.
 func (h *handler) actionState(w http.ResponseWriter, s store.Snapshot) {
 	type serverState struct {
-		ID            string     `json:"id"`
-		Enabled       bool       `json:"enabled"`
-		Checked       string     `json:"checked"`
-		Tools         []toolView `json:"tools"`
-		BatchRegistry bool       `json:"batch_registry"`
-		BatchEnabled  bool       `json:"batch_enabled"`
-		BatchProfile  string     `json:"batch_profile"`
-		BatchCount    int        `json:"batch_count"`
+		ID              string     `json:"id"`
+		Enabled         bool       `json:"enabled"`
+		Checked         string     `json:"checked"`
+		Tools           []toolView `json:"tools"`
+		BatchRegistry   bool       `json:"batch_registry"`
+		BatchEnabled    bool       `json:"batch_enabled"`
+		BatchProfile    string     `json:"batch_profile"`
+		BatchCount      int        `json:"batch_count"`
+		BatchClassified bool       `json:"batch_classified"`
+		CatalogKnown    bool       `json:"catalog_known"`
+		CatalogFresh    bool       `json:"catalog_fresh"`
+		CatalogAt       string     `json:"catalog_at"`
 	}
 	out := struct {
 		Audit    string        `json:"audit_status"`
@@ -772,7 +846,7 @@ func (h *handler) actionState(w http.ResponseWriter, s store.Snapshot) {
 		if v.Tools == nil {
 			v.Tools = []toolView{}
 		}
-		out.Servers = append(out.Servers, serverState{v.ID, v.Server.Enabled, v.Checked, v.Tools, v.BatchRegistry, v.BatchRegistry && v.Server.BatchReadEnabled, v.Server.BatchReadProfile, v.BatchCount})
+		out.Servers = append(out.Servers, serverState{v.ID, v.Server.Enabled, v.Checked, v.Tools, v.BatchRegistry, v.BatchRegistry && v.Server.BatchReadEnabled, v.Server.BatchReadProfile, v.BatchCount, v.BatchClassified, v.CatalogKnown, v.CatalogFresh, v.CatalogAt})
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(out)

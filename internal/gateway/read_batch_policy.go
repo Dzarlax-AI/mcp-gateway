@@ -20,8 +20,9 @@ var readBatchDenied = errors.New("batch operation denied")
 // ReadBatchPolicy grants narrowly scoped batch reads from an operator-managed file.
 // The file is loaded for every decision so revocations take effect immediately.
 type ReadBatchPolicy struct {
-	Path     string
-	Registry bool
+	Path       string
+	Registry   bool
+	Classified bool
 }
 
 type readBatchPolicyFile struct {
@@ -36,7 +37,10 @@ type readBatchPolicyOpEntry struct {
 }
 
 func (p *ReadBatchPolicy) Validate() error {
-	if p != nil && p.Registry {
+	if p != nil && (p.Registry || p.Classified) {
+		if p.Registry && p.Classified {
+			return readBatchDenied
+		}
 		if p.Path != "" {
 			return readBatchDenied
 		}

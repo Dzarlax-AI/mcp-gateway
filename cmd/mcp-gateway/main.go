@@ -117,6 +117,7 @@ func run() error {
 		opts.Audit = auditSink
 		opts.Catalog = catalogs
 		opts.BatchRegistry = batch != nil && batch.RegistryMode()
+		opts.BatchClassified = batch != nil && batch.ClassifiedMode()
 		opts.MCPEndpoint = connectionEndpoint(addr, origin)
 		a, e := admin.New(registry, opts)
 		if e != nil {
@@ -274,10 +275,10 @@ func readBatchOptions(searchEnabled bool) (*gateway.ReadBatchExecutor, error) {
 		return nil, errors.New("read batch requires tool search")
 	}
 	mode := os.Getenv("GATEWAY_READ_BATCH_POLICY_MODE")
-	if mode != "" && mode != "file" && mode != "registry" {
+	if mode != "" && mode != "file" && mode != "registry" && mode != "classified" {
 		return nil, errors.New("invalid read batch policy mode")
 	}
-	policy := &gateway.ReadBatchPolicy{Path: os.Getenv("GATEWAY_READ_BATCH_ALLOWLIST"), Registry: mode == "registry"}
+	policy := &gateway.ReadBatchPolicy{Path: os.Getenv("GATEWAY_READ_BATCH_ALLOWLIST"), Registry: mode == "registry", Classified: mode == "classified"}
 	if err := policy.Validate(); err != nil {
 		return nil, errors.New("read batch requires a valid operator allowlist")
 	}

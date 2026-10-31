@@ -57,3 +57,9 @@ Server instructions prefer direct known invocations and one search for unknown u
 - GATEWAY_AUDIT_ENABLED defaults false; enabled mode requires private GATEWAY_AUDIT_DIR (0700/0600). Bounded local audit status is disabled/ok/degraded; sink failure does not undo or retry saved work. No payloads or credential material in events.
 - ACL PostgreSQL parity uses a separate disposable TEST_ACL_POSTGRES_DSN. Run node scripts/test_permission_actions.cjs alongside existing checks. Export includes ACL runbook/assets/tests, excludes private plans and operational state.
 - Approved scope is local implementation and synthetic checks only. No commit, push, deployment, Hermes or live client/provider changes are authorized. Runbook: docs/deployment/agent-acl.md.
+
+## Classified batch and admin workspace
+- `GATEWAY_READ_BATCH_POLICY_MODE=classified` is a separate opt-in mode; file/registry compatibility remains. The classified mode exposes the compact admin workspace and per-tool automatic/manual operation types.
+- True read-only annotations are trusted server declarations, false/missing are unknown in the pinned SDK. Manual read binds invocation schemas and connection identity; changes require review. Manual write always denies batch. No classification grants ACL or enables a tool.
+- Bulk tool changes commit one bounded selection with one CAS; disabling never contacts upstream. Display-only catalog peek never refreshes or extends TTL.
+- New optional Tool fields are not understood by older binaries: remove them with a reviewed, revision-bound export/import before rollback. No SQL/startup migration. See docs/deployment/classified-batch.md.

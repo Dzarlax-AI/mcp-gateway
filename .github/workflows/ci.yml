@@ -90,9 +90,17 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
+      - name: Create isolated classification contract databases
+        env:
+          CLASSIFIED_TEST_POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          docker exec "$CLASSIFIED_TEST_POSTGRES_CONTAINER" createdb -U postgres operation_contract
+          docker exec "$CLASSIFIED_TEST_POSTGRES_CONTAINER" createdb -U postgres management_contract
       - run: go vet ./...
       - run: go test -race ./...
         env:
+          TEST_OPERATION_POSTGRES_DSN: postgres://postgres:synthetic-ci-postgres-password@127.0.0.1:${{ job.services.postgres.ports[5432] }}/operation_contract?sslmode=disable
+          TEST_MANAGEMENT_POSTGRES_DSN: postgres://postgres:synthetic-ci-postgres-password@127.0.0.1:${{ job.services.postgres.ports[5432] }}/management_contract?sslmode=disable
           TEST_ACL_POSTGRES_DSN: postgres://postgres:synthetic-ci-postgres-password@127.0.0.1:${{ job.services.acl.ports[5432] }}/acl_contract?sslmode=disable
           TEST_POSTGRES_DSN: postgres://postgres:synthetic-ci-postgres-password@127.0.0.1:${{ job.services.postgres.ports[5432] }}/store_contract?sslmode=disable
           TEST_CLIENT_KEYS_POSTGRES_DSN: postgres://postgres:synthetic-ci-postgres-password@127.0.0.1:${{ job.services.clientkeys.ports[5432] }}/client_key_contract?sslmode=disable

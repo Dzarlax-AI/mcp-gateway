@@ -4,6 +4,7 @@ package catalog
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"os"
@@ -516,3 +517,35 @@ func toolBytes(in []*mcp.Tool) int {
 	}
 	return n
 }
+
+// Metadata is an isolated display snapshot. It never authorizes dispatch.
+type Metadata struct {
+	Tools []*mcp.Tool
+	At    time.Time
+	Fresh bool
+}
+
+// Peek reads cached metadata without network requests, refreshing TTL, or changing
+// LRU priority. Connection changes cannot expose metadata from an old endpoint.
+func (p *Provider) Peek(c Connection) (Metadata, bool) {
+	if p == nil {
+		return Metadata{}, false
+	}
+	fp := Fingerprint(c)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	e := p.entries[c.ID]
+	if p.closed || e == nil || e.fingerprint != fp || c.Revision < e.revision {
+		return Metadata{}, false
+	}
+	tools, err := cloneTools(e.tools)
+	if err != nil {
+		return Metadata{}, false
+	}
+	age := p.opts.now().Sub(e.at)
+	return Metadata{Tools: tools, At: e.at, Fresh: age >= 0 && age < p.opts.ttl}, true
+}
+
+// ConnectionBinding is a non-secret digest used only to bind operator approvals
+// to the exact endpoint and credential identity, including environment values.
+func ConnectionBinding(c Connection) string { fp := Fingerprint(c); return hex.EncodeToString(fp[:]) }

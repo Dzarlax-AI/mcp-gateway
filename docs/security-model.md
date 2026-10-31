@@ -42,3 +42,7 @@ Reverting a schema-v2 image alone is unsafe: old binaries expect schema v1. The 
 Do not put secrets or private production data in a public issue. Until a private vulnerability-reporting channel is enabled for the GitHub repository, contact the repository maintainer through a private channel you already have. No specific support SLA or security audit is claimed.
 
 See [Agent ACL](deployment/agent-acl.md) for required document migration, lifecycle invalidation, audit failure semantics and compatible rollback.
+
+## Classified batch mode
+
+The opt-in classified policy trusts `readOnlyHint: true` from the configured upstream. An operator can override the operation type. Manual-read approvals are bound to tool invocation schemas and exact connection identity; stale approvals deny batch, and manual writes override annotations. Missing/false hints are unclassified in the pinned SDK. These decisions never bypass client ACL, enabled switches, argument validation or endpoint binding. Legacy profile/file modes are unchanged. See [classified batch administration](deployment/classified-batch.md) for persistence and safe downgrade.

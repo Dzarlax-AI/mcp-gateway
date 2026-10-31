@@ -46,3 +46,17 @@ func TestRegistryReadBatchStartupMode(t *testing.T) {
 		t.Fatal("unknown mode accepted")
 	}
 }
+
+func TestClassifiedReadBatchStartupMode(t *testing.T) {
+	t.Setenv("GATEWAY_READ_BATCH_ENABLED", "true")
+	t.Setenv("GATEWAY_READ_BATCH_POLICY_MODE", "classified")
+	t.Setenv("GATEWAY_READ_BATCH_ALLOWLIST", "")
+	b, err := readBatchOptions(true)
+	if err != nil || !b.ClassifiedMode() || b.RegistryMode() {
+		t.Fatalf("classified mode: %v", err)
+	}
+	t.Setenv("GATEWAY_READ_BATCH_ALLOWLIST", "unexpected.json")
+	if _, err = readBatchOptions(true); err == nil {
+		t.Fatal("mixed policy accepted")
+	}
+}
