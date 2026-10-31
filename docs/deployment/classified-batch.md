@@ -31,3 +31,9 @@ There is no startup migration. The old binary rejects the new optional tool fiel
 For an explicitly authorized downgrade, use the new binary's existing private export/CAS import workflow to remove only `operation_kind` and `operation_contract_hash`, preserve all other current server/tool/principal settings and encrypted credentials, and restore the desired legacy policy mode. Review the exact export and expected revision before importing. Do not restore an old whole database over newer state, and do not auto-retry an unknown write.
 
 Production rollout must separately back up the current registry, ciphertext, deployment inputs and environment, then select the classified mode explicitly. No real tool invocation is needed to classify a tool.
+
+### Bulk operation classification
+
+The selected-tool toolbar also provides Read, Write and Automatic. These actions use `POST /admin/servers/<id>/bulk-operation` with the same CSRF/revision checks and 1–500 exact selected names, committing once for the whole selection. Enabled switches and ACL entries are preserved. Mixed operation groups are allowed.
+
+Read verifies every selected definition and connection-bound hash against one current catalog; one missing or changed definition rejects the whole request. Write and Automatic work without contacting upstream and clear previous manual-read hashes. Native forms submit the chosen `operation_kind` button value; JavaScript includes that submitter value explicitly and updates the groups after a confirmed save. Unknown acknowledgements require read-back and are never automatically retried.

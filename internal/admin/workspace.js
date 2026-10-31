@@ -150,6 +150,7 @@
         row.dataset.enabled = String(tool.Enabled);
         const op = q('select[name=operation_kind]', row); op.value = tool.ManualKind || '';
         q('input[name=contract_hash]', row).value = tool.DefinitionHash || '';
+        q('[data-bulk-contract]', row).value = tool.DefinitionHash || '';
         const form = q('[data-toggle]', row);
         form.action = base + '/admin/servers/' + encodeURIComponent(serverID) + (tool.Enabled ? '/tool-disable' : '/tool-enable');
         q('button', form).setAttribute('aria-checked', String(tool.Enabled));
@@ -170,6 +171,7 @@
     const focusHint = focusRow ? {name: focusRow.dataset.tool, selector: submitter.closest('[data-toggle]') ? '[data-toggle] button' : '.tool-name summary'} : null;
     const action = submitter?.getAttribute('formaction') || form.action;
     const body = new URLSearchParams(new FormData(form));
+    if (submitter?.name) body.set(submitter.name, submitter.value);
     if (form.id === 'bulk') {
       const kinds = new Set(selected().map(box => box.closest('[data-tool]').dataset.kind));
       if (kinds.size === 1) body.set('selection_kind', kinds.values().next().value);
@@ -184,7 +186,7 @@
         refresh.hidden = !uncertain; return;
       }
       saved = true;
-      await apply(await response.json(), false, focusHint, /\/(check|tool-operation)$/.test(new URL(action, location.href).pathname)); status.textContent = 'Saved.';
+      await apply(await response.json(), false, focusHint, /\/(check|tool-operation|bulk-operation)$/.test(new URL(action, location.href).pathname)); status.textContent = 'Saved.';
     } catch (_) { uncertain = true; refresh.hidden = false; status.textContent = saved ? 'Saved; refresh failed. Refresh state before making another change.' : 'Save result unknown. Refresh state before making another change.'; }
     finally { busy = false; lock(); if (submitter?.isConnected) submitter.focus({preventScroll:true}); }
   });
