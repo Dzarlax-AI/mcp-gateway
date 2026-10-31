@@ -204,11 +204,6 @@ func contract(t *testing.T, kind, location string) {
 			t.Fatal("invalid custom secret", err)
 		}
 	}
-	srv.TokenRef = "duplicate"
-	c.Servers["duplicate"] = srv
-	if _, err = s.CompareAndSwap(ctx, 7, c, map[string]*string{"duplicate": &customKey}); !errors.Is(err, ErrSecret) {
-		t.Fatal("duplicate custom credential", err)
-	}
 
 	delete(c.Servers, "duplicate")
 	beforeSimple, err := s.ReadSnapshot(ctx)

@@ -309,17 +309,13 @@ func (s *DB) readSecrets(ctx context.Context, tx *sql.Tx) (map[string]string, er
 	return out, nil
 }
 func validateSecrets(c *config.Config, secrets map[string]string) error {
+	// Upstreams may share credentials, but must never reuse gateway client keys.
 	used := map[string]bool{}
 	for _, p := range c.Principals {
 		if p.TokenHash != "" {
 			used[p.TokenHash] = true
 		} else {
 			used[config.TokenDigest(os.Getenv(p.TokenEnv))] = true
-		}
-	}
-	for _, srv := range c.Servers {
-		if srv.TokenEnv != "" {
-			used[config.TokenDigest(os.Getenv(srv.TokenEnv))] = true
 		}
 	}
 	for id, srv := range c.Servers {
@@ -330,7 +326,6 @@ func validateSecrets(c *config.Config, secrets map[string]string) error {
 		if srv.TokenRef != id || !ok || !config.ValidCredential(srv.AuthHeader, token) || used[config.TokenDigest(token)] {
 			return ErrSecret
 		}
-		used[config.TokenDigest(token)] = true
 	}
 	return nil
 }

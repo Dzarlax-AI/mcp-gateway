@@ -7,6 +7,7 @@ The gateway is a privileged bridge to upstream tools. Restricted principals requ
 - Client requests select registered server/tool IDs, never arbitrary endpoints.
 - Remote upstreams require exact HTTPS consent. TLS validation stays enabled; redirects and system HTTP proxies are disabled. Literal loopback HTTP is supported for local upstreams.
 - Incoming credentials use exactly one Bearer or X-API-Key header. Client credentials are never forwarded to upstreams.
+- Registered upstream servers may share a credential, including environment-backed and encrypted values. Upstream credentials must differ from all gateway client keys. Each encrypted server credential remains bound to its own server ID; updating one saved credential does not update other servers. Revoking the shared value at its provider affects every upstream that uses it.
 - Upstream secrets and recoverable client keys use AES-256-GCM with distinct associated data. Client authentication uses a digest; normal registry snapshots do not decrypt client keys.
 - Admin authentication is separate. Sessions require CSRF and Origin/Host validation. Reveal is protected POST with no-store responses. Normal list/GET/create responses contain no full client key.
 - Upstream schemas/content are untrusted. Arguments are schema-validated; external schema references are not loaded. Tool annotations do not expand access.
