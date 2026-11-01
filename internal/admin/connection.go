@@ -34,18 +34,20 @@ type keyView struct {
 	Recoverable bool   `json:"recoverable"`
 }
 type connectionView struct {
-	Audit        string    `json:"audit_status"`
-	BasePath     string    `json:"-"`
-	CSRF         string    `json:"-"`
-	User         string    `json:"-"`
-	Authentik    bool      `json:"-"`
-	Endpoint     string    `json:"endpoint"`
-	Command      string    `json:"command"`
-	ClaudeBearer string    `json:"-"`
-	ClaudeAPIKey string    `json:"-"`
-	Revision     int64     `json:"revision"`
-	Keys         []keyView `json:"keys"`
-	Token        string    `json:"token,omitempty"`
+	Selected     *keyView        `json:"-"`
+	Permission   *permissionView `json:"-"`
+	Audit        string          `json:"audit_status"`
+	BasePath     string          `json:"-"`
+	CSRF         string          `json:"-"`
+	User         string          `json:"-"`
+	Authentik    bool            `json:"-"`
+	Endpoint     string          `json:"endpoint"`
+	Command      string          `json:"command"`
+	ClaudeBearer string          `json:"-"`
+	ClaudeAPIKey string          `json:"-"`
+	Revision     int64           `json:"revision"`
+	Keys         []keyView       `json:"keys"`
+	Token        string          `json:"token,omitempty"`
 }
 
 func (h *handler) connectionView(snap store.Snapshot, sess session, user string) connectionView {

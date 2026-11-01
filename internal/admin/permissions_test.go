@@ -211,3 +211,49 @@ func TestVerifiedCatalogRemovalClearsOnlyMissingACL(t *testing.T) {
 		t.Fatal("probe reconciliation")
 	}
 }
+
+func TestClientWorkspaceGuidesAndMultiServerPermissions(t *testing.T) {
+	h, s := adminFixture(t)
+	h.mcpEndpoint = "http://127.0.0.1:8080/mcp"
+	cookie, csrf := login(t, h)
+	ctx := context.Background()
+	snap, _ := s.ReadSnapshot(ctx)
+	c := clone(snap.Config)
+	c.Servers["alpha"] = config.Server{URL: "http://127.0.0.1:9999/mcp", Enabled: true, Tools: map[string]config.Tool{"read": {Enabled: true, AccessMode: "shared"}, "other": {AccessMode: "shared"}}}
+	c.Servers["beta"] = config.Server{URL: "http://127.0.0.1:9998/mcp", Tools: map[string]config.Tool{"off": {Enabled: true, AccessMode: "shared"}}}
+	t.Setenv("SECOND_CLIENT_TOKEN", "second-client-token-123456789")
+	c.Principals["second"] = config.Principal{TokenEnv: "SECOND_CLIENT_TOKEN", AccessPolicy: config.Restricted, ToolAllowlist: map[string][]string{}, Grants: map[string]map[string]config.Grant{}}
+	snap, e := s.CompareAndSwap(ctx, snap.Revision, c, nil)
+	if e != nil {
+		t.Fatal(e)
+	}
+	for _, path := range []string{"/admin/connection", "/admin/connection/permissions/codex"} {
+		w := request(h, "GET", path, nil, cookie)
+		body := w.Body.String()
+		for _, want := range []string{"Connect Codex", "codex mcp add", "MCP_GATEWAY_TOKEN", "Connect Claude Code", "claude-bearer", "claude-api-key", "data-client-workspace", "data-client-link"} {
+			if w.Code != 200 || !strings.Contains(body, want) {
+				t.Fatalf("%s missing %s", path, want)
+			}
+		}
+	}
+	form := url.Values{"csrf": {csrf}, "revision": {fmt.Sprint(snap.Revision)}, "policy": {"restricted"}, permissionField("alpha", "read"): {"1"}, permissionField("beta", "off"): {"1"}}
+	w := request(h, "POST", "/admin/connection/permissions/codex", form, cookie)
+	if w.Code != 303 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	after, _ := s.ReadSnapshot(ctx)
+	if after.Revision != snap.Revision+1 || len(after.Config.Principals["codex"].ToolAllowlist) != 2 || len(after.Config.Principals["second"].ToolAllowlist) != 0 || after.Config.Servers["beta"].Enabled {
+		t.Fatal("multi-server ACL not isolated")
+	}
+	page := request(h, "GET", "/admin/connection/permissions/codex", nil, cookie).Body.String()
+	for _, want := range []string{`data-server="alpha"`, `data-server="beta"`, `data-permission-group-select`, `data-allow-visible`, `data-deny-visible`, `Client settings`} {
+		if !strings.Contains(page, want) {
+			t.Fatal("missing workspace control", want)
+		}
+	}
+	// A stale HTML submission preserves the submitted draft and marks it uncertain.
+	stale := request(h, "POST", "/admin/connection/permissions/codex", form, cookie)
+	if stale.Code != 409 || !strings.Contains(stale.Body.String(), `data-uncertain="true"`) {
+		t.Fatal("stale draft unlocked", stale.Code)
+	}
+}

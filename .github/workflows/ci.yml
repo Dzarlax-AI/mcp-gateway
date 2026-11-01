@@ -3,7 +3,7 @@ on:
   push:
     branches: [main, security/2026-10-25-remediation]
   pull_request:
-    branches: [main]
+    branches: [main, security/2026-10-25-remediation]
 permissions:
   contents: read
 jobs:
