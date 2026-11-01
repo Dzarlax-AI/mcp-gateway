@@ -99,7 +99,7 @@ func New(s store.Store, o Options) (http.Handler, error) {
 			return nil, errInput
 		}
 	}
-	return &handler{batchClassified: o.BatchClassified, audit: o.Audit, batchRegistry: o.BatchRegistry, s: s, a: a, catalog: o.Catalog, probes: map[string]probe{}, mcpEndpoint: o.MCPEndpoint, connectionTpl: template.Must(template.New("connection").Parse(connectionTemplate)), tpl: template.Must(template.New("page").Parse(strings.ReplaceAll(pageTemplate, `"/admin`, `"{{$.BasePath}}/admin`)))}, nil
+	return &handler{batchClassified: o.BatchClassified, audit: o.Audit, batchRegistry: o.BatchRegistry, s: s, a: a, catalog: o.Catalog, probes: map[string]probe{}, mcpEndpoint: o.MCPEndpoint, connectionTpl: template.Must(template.New("connection").Parse(connectionTemplate + permissionTemplate)), tpl: template.Must(template.New("page").Parse(strings.ReplaceAll(pageTemplate, `"/admin`, `"{{$.BasePath}}/admin`)))}, nil
 }
 func equal(a, b string) bool { return b != "" && subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1 }
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {

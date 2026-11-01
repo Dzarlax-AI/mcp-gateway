@@ -8,20 +8,34 @@
   const refresh = page.querySelector('[data-keys-refresh]');
   const issued = page.querySelector('[data-issued]');
   const secret = page.querySelector('#issued-key');
+  const workspace = page.dataset.clientWorkspace === 'true';
+  let permissionBusy = false, permissionDirty = false, permissionUncertain = false;
   let busy = false;
   let uncertain = false;
   let revision = Number(page.querySelector('[data-key-revision]').textContent);
   let generation = 0;
   let hideTimer;
-  const clear = () => { generation++; clearTimeout(hideTimer); secret.value = ''; secret.removeAttribute('value'); issued.hidden = true; };
+  const clear = () => { const wasVisible = !issued.hidden; generation++; clearTimeout(hideTimer); secret.value = ''; secret.removeAttribute('value'); issued.hidden = true; if (wasVisible) status.textContent = 'Key hidden.'; };
   if (!issued.hidden) hideTimer = setTimeout(clear, 60000);
   page.querySelector('[data-dismiss]').addEventListener('click', clear);
   window.addEventListener('pagehide', clear);
   window.addEventListener('pageshow', event => { if (event.persisted) clear(); });
   const lock = () => {
-    page.querySelectorAll('[data-key-create] button,[data-key-delete] button,[data-key-reveal] button').forEach(button => { button.disabled = busy || uncertain; });
-    refresh.disabled = busy;
+    page.querySelectorAll('[data-key-create] button,[data-key-delete] button,[data-key-reveal] button').forEach(button => { button.disabled = busy || uncertain || permissionBusy || permissionDirty || permissionUncertain; });
+    refresh.disabled = busy || permissionBusy || permissionDirty;
+    if (workspace) window.dispatchEvent(new CustomEvent('gateway-key-state',{detail:{busy, uncertain}}));
   };
+  if (workspace) {
+    window.addEventListener('gateway-permission-state', event => {
+      permissionBusy = event.detail.busy; permissionDirty = event.detail.dirty; permissionUncertain = event.detail.uncertain;
+      const savedRevision = Number(page.querySelector('[data-key-revision]').textContent);
+      if (Number.isSafeInteger(savedRevision) && savedRevision > 0) revision = savedRevision;
+      const note = page.querySelector('[data-key-lock-note]'); if (note) note.hidden = !permissionDirty && !permissionUncertain;
+      page.querySelectorAll('[data-key-create] button,[data-key-delete] button,[data-key-reveal] button').forEach(button => {button.disabled = busy || uncertain || permissionBusy || permissionDirty || permissionUncertain;});
+    });
+    const search = page.querySelector('#client-search');
+    search.addEventListener('input', () => {const term=search.value.toLocaleLowerCase().trim();page.querySelectorAll('[data-client-link]').forEach(link=>{link.hidden=!link.dataset.clientSearch.toLocaleLowerCase().includes(term);});});
+  }
   const element = (tag, text, className) => {
     const node = document.createElement(tag);
     if (text !== undefined) node.textContent = text;
@@ -38,17 +52,24 @@
     clear();
     revision = data.revision;
     page.querySelector('[data-key-revision]').textContent = revision;
+    page.querySelector('[data-key-count]').textContent = String(data.keys.length);
     page.querySelector('[data-key-create] input[name="revision"]').value = revision;
     const list = page.querySelector('[data-key-list]');
     const fragment = document.createDocumentFragment();
     data.keys.forEach(key => {
       const card = element('article', undefined, 'key-card'); card.dataset.keyId = key.id;
-      card.append(element('h3', key.name));
-      card.append(element('p', 'Principal ' + key.id + ' · Policy ' + (key.policy || 'unknown') + ' · Configured ' + (key.configured || 0) + ' · Effective ' + (key.effective || 0)));
+      const heading = element('header', undefined, 'key-heading');
+      heading.append(element('h3', key.name), element('span', key.legacy ? 'Shared access' : 'Restricted', 'policy-tag')); card.append(heading);
+      const access = element('div', undefined, 'key-access');
+      access.append(element('span', (key.configured || 0) + ' configured', 'access-stat'), element('span', (key.effective || 0) + ' available', 'access-stat')); card.append(access);
       if (key.legacy) card.append(element('p', 'Legacy shared access: enabled shared tools are available.'));
-      const permissions = element('a', 'Edit permissions'); permissions.href = base + '/admin/connection/permissions/' + encodeURIComponent(key.id); card.append(permissions);
+      const permissions = element('a', 'Edit permissions', 'permission-link'); permissions.href = base + '/admin/connection/permissions/' + encodeURIComponent(key.id); card.append(permissions);
+      const metadata = element('details', undefined, 'key-meta'); metadata.append(element('summary', 'Key details'));
+      const principal = element('p', 'Principal '); principal.append(element('code', key.id), document.createTextNode(' · Policy ' + (key.policy || 'unknown'))); metadata.append(principal);
+      if (key.managed) { const info = element('p'); info.append(element('code', key.prefix + '…'), document.createTextNode(' · Created ' + key.created_at)); metadata.append(info); }
+      else metadata.append(element('p', 'Managed by environment.'));
+      card.append(metadata);
       if (key.managed) {
-        const info = element('p'); info.append(element('code', key.prefix + '…'), document.createTextNode(' · Created ' + key.created_at)); card.append(info);
         if (key.recoverable) {
           const reveal = element('form'); reveal.dataset.keyReveal = ''; reveal.method = 'post'; reveal.action = base + '/admin/connection/keys/' + encodeURIComponent(key.id) + '/reveal';
           reveal.append(hidden('csrf', csrf), hidden('revision', revision));
@@ -90,7 +111,7 @@
     hideTimer = setTimeout(clear, 60000);
   }
   async function revealKey(id, copy) {
-    if (busy || uncertain) return;
+    if (busy || uncertain || permissionBusy || permissionDirty || permissionUncertain) return;
     clear(); const requestGeneration = generation;
     busy = true; lock(); status.textContent = copy ? 'Copying…' : 'Showing…';
     try {
@@ -118,7 +139,7 @@
     if (form.matches('[data-key-reveal]')) { event.preventDefault(); const id = form.querySelector('[data-reveal-id]').dataset.revealId; await revealKey(id, false); return; }
     if (!form.matches('[data-key-create],[data-key-delete]')) return;
     event.preventDefault();
-    if (busy || uncertain) return;
+    if (busy || uncertain || permissionBusy || permissionDirty || permissionUncertain) return;
     clear();
     busy = true; lock(); status.textContent = 'Saving…';
     try {
@@ -130,6 +151,12 @@
       const data = await response.json();
       const creation = form.matches('[data-key-create]');
       if (!validState(data) || data.token !== undefined) throw new Error('Unconfirmed');
+      if (workspace) {
+        const existing = new Set(Array.from(page.querySelectorAll('[data-client-link]')).map(link => link.dataset.keyId));
+        const created = creation ? data.keys.find(key => !existing.has(key.id)) : null;
+        location.assign(created ? base + '/admin/connection/permissions/' + encodeURIComponent(created.id) : base + '/admin/connection');
+        return;
+      }
       apply(data);
       if (creation) {
         form.reset(); form.querySelector('[name="revision"]').value = revision;
@@ -142,12 +169,13 @@
     } finally { busy = false; lock(); }
   });
   refresh.addEventListener('click', async () => {
-    if (busy) return;
+    if (busy || permissionBusy || permissionDirty) return;
     busy = true; lock();
     try {
       const response = await fetch(base + '/admin/connection', {headers:{'Accept':'application/json'}, credentials:'same-origin', redirect:'error', cache:'no-store'});
       if (!response.ok) throw new Error('Refresh failed');
       const data = await response.json(); if (!validState(data)) throw new Error('Invalid state');
+      if (workspace) { location.reload(); return; }
       apply(data); uncertain = false; refresh.hidden = true;
       status.textContent = 'Keys refreshed. Check the list before making another change.';
     } catch { status.textContent = 'Refresh failed. Your pending key name is preserved. Try refresh again.'; }
