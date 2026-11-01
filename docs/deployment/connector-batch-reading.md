@@ -47,7 +47,14 @@ Batch limits, deadlines, ordered per-item statuses, output budgets, no automatic
 - `go test ./internal/gateway -run TestConnectorBatchWarmBenchmark -v`: 20 alternating file/registry cycles for 1/3 synthetic 10ms reads; output `/tmp/connector-batch-benchmark.json` contains medians/p95 and upstream call count.
 - `go test ./internal/readpolicy -bench BenchmarkClassification -benchmem -run '^$'` measures local classification cost.
 - Build fixture: `go build -o /tmp/gateway-connector-fixture scripts/connector_batch_fixture.go`. Start it and use its printed synthetic admin origin and gateway endpoint. SIGTERM cleans its temporary SQLite registry.
-- `node scripts/test_connector_batch_admin.cjs <admin-origin>` uses the installed local Playwright runtime to test switches, CAS/unknown outcomes, draft preservation, responsive sizes and no-JS behavior.
+- `node scripts/test_connector_batch_admin.cjs <admin-origin>` uses Playwright to test switches, CAS/unknown outcomes, draft preservation, responsive sizes and no-JS behavior. Install `playwright` in Node's module search path, or set `PLAYWRIGHT_MODULE` to an existing Playwright module path. For an isolated installation outside the checkout, set `ADMIN_ORIGIN` to the synthetic fixture's printed loopback admin origin, then run:
+
+  ```sh
+  npm install --prefix /tmp/gateway-playwright playwright
+  /tmp/gateway-playwright/node_modules/.bin/playwright install chromium
+  PLAYWRIGHT_MODULE=/tmp/gateway-playwright/node_modules/playwright \
+    node scripts/test_connector_batch_admin.cjs "$ADMIN_ORIGIN"
+  ```
 - `python3 scripts/verify_connector_batch_agent.py <admin-origin> <gateway-endpoint>` uses a temporary isolated Codex home containing the existing auth file and only the synthetic fixture connector. It does not edit the real Codex config. Fixture-only approval applies to discovery/read routes. Authentication files are removed with the temporary home.
 
 SDK acceptance explicitly uses MCP protocol `2025-11-25`. The current SDK's default `2026-07-28` revealed an existing nested upstream initialize/context incompatibility; no transport/protocol changes are included here. Compatibility with that protocol is not claimed. Production/native-chat acceptance requires a separately authorized release.
