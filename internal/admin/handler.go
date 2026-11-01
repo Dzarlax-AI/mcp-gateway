@@ -38,6 +38,9 @@ type Options struct {
 	BasePath          string
 	Token             string
 	Origin            string
+	AccessIssuer      string
+	AccessAudience    string
+	AccessEmails      []string
 	AuthMode          string
 	TrustedProxyCIDRs []string
 	AllowedUsers      []string
@@ -135,17 +138,17 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		r.Form = r.PostForm
 	}
-	user := ""
-	if h.a.forward != nil {
+	user, binding := "", ""
+	if h.a.sso() {
 		var allowed bool
-		user, allowed = h.a.forward.identity(r)
+		user, binding, allowed = h.a.identity(r)
 		if !allowed {
 			http.Error(w, "SSO access denied", 403)
 			return
 		}
 	}
 	if r.URL.Path == "/admin/login" {
-		if h.a.forward != nil {
+		if h.a.sso() {
 			if r.Method == "POST" {
 				http.Error(w, "Token login disabled", 403)
 			} else {
@@ -163,12 +166,12 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sess, ok := h.a.current(r)
-	if h.a.forward != nil {
-		if ok && sess.user != user {
+	if h.a.sso() {
+		if ok && sess.user != binding {
 			ok = false
 		}
 		if !ok && r.Method == "GET" {
-			sess, ok = h.a.ssoSession(w, r, user)
+			sess, ok = h.a.ssoSession(w, r, binding)
 			if !ok {
 				http.Error(w, "Session limit reached", 429)
 				return
@@ -240,7 +243,8 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		v := h.view(snap, sess.csrf)
 		v.User = user
-		v.Authentik = h.a.forward != nil
+		v.Authentik = h.a.sso()
+		v.AuthProvider = h.a.provider()
 		h.render(w, v)
 		return
 	}
@@ -649,7 +653,8 @@ func (h *handler) inputError(w http.ResponseWriter, r *http.Request, snap store.
 		return
 	}
 	v := h.view(snap, csrf)
-	v.User, v.Authentik, v.Error = user, h.a.forward != nil, message
+	v.User, v.Authentik, v.Error = user, h.a.sso(), message
+	v.AuthProvider = h.a.provider()
 	if r.URL.Path == "/admin/servers/create" {
 		v.Draft = map[string]string{}
 		for _, key := range []string{"id", "description", "keywords", "url", "auth_mode", "auth_header", "https_consent"} {
@@ -692,6 +697,7 @@ type page struct {
 	Draft           map[string]string
 	Login           bool
 	User            string
+	AuthProvider    string
 	Authentik       bool
 	CSRF            string
 	Revision        int64

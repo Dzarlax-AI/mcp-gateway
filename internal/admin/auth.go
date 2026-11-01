@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/base64"
+	"mcp-gateway/internal/accessauth"
 	"net"
 	"net/http"
 	"net/url"
@@ -29,6 +30,7 @@ type auth struct {
 	token, host, origin string
 	secure              bool
 	forward             *forwardAuth
+	access              *accessauth.Verifier
 }
 
 func random() string {
@@ -152,6 +154,8 @@ func (a *auth) logout(w http.ResponseWriter, r *http.Request) {
 	target := a.basePath + "/admin/login"
 	if a.forward != nil {
 		target = "/outpost.goauthentik.io/sign_out"
+	} else if a.access != nil {
+		target = "/cdn-cgi/access/logout"
 	}
 	http.Redirect(w, r, target, 303)
 }

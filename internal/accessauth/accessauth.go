@@ -1,5 +1,5 @@
 // Package accessauth verifies Cloudflare Access application assertions for the
-// gateway's optional, separate Managed OAuth route.
+// gateway's independently configured admin and Managed OAuth routes.
 package accessauth
 
 import (
@@ -36,6 +36,8 @@ type Options struct {
 
 type Identity struct {
 	Principal string
+	Subject   string
+	Email     string
 	ExpiresAt time.Time
 }
 
@@ -155,7 +157,7 @@ func (v *Verifier) Verify(ctx context.Context, assertion string) (Identity, erro
 	if !ok || principal == "" {
 		return Identity{}, ErrDenied
 	}
-	return Identity{Principal: principal, ExpiresAt: c.ExpiresAt.Time}, nil
+	return Identity{Principal: principal, Subject: c.Subject, Email: c.Email, ExpiresAt: c.ExpiresAt.Time}, nil
 }
 
 func (v *Verifier) key(ctx context.Context, kid string) (*rsa.PublicKey, error) {

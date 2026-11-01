@@ -50,12 +50,15 @@ func newConfiguredAuth(o Options) (*auth, error) {
 		mode = "token"
 	}
 	if mode == "token" {
-		if len(o.TrustedProxyCIDRs)+len(o.AllowedUsers)+len(o.AllowedGroups) != 0 {
+		if len(o.TrustedProxyCIDRs)+len(o.AllowedUsers)+len(o.AllowedGroups) != 0 || hasAccessOptions(o) {
 			return nil, errInput
 		}
 		return newAuth(o.Token, o.Origin)
 	}
-	if mode != "authentik" || o.Token != "" || len(o.TrustedProxyCIDRs) == 0 || len(o.TrustedProxyCIDRs) > 16 {
+	if mode == "cloudflare" {
+		return newAccessAuth(o)
+	}
+	if hasAccessOptions(o) || mode != "authentik" || o.Token != "" || len(o.TrustedProxyCIDRs) == 0 || len(o.TrustedProxyCIDRs) > 16 {
 		return nil, errInput
 	}
 	f := &forwardAuth{}

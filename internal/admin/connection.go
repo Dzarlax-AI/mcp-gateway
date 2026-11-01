@@ -34,6 +34,7 @@ type keyView struct {
 	Recoverable bool   `json:"recoverable"`
 }
 type connectionView struct {
+	AuthProvider string          `json:"-"`
 	Selected     *keyView        `json:"-"`
 	Permission   *permissionView `json:"-"`
 	Audit        string          `json:"audit_status"`
@@ -51,7 +52,7 @@ type connectionView struct {
 }
 
 func (h *handler) connectionView(snap store.Snapshot, sess session, user string) connectionView {
-	v := connectionView{Audit: h.audit.State(), BasePath: h.a.basePath, CSRF: sess.csrf, User: user, Authentik: h.a.forward != nil, Endpoint: h.mcpEndpoint, Revision: snap.Revision, Keys: []keyView{}}
+	v := connectionView{AuthProvider: h.a.provider(), Audit: h.audit.State(), BasePath: h.a.basePath, CSRF: sess.csrf, User: user, Authentik: h.a.sso(), Endpoint: h.mcpEndpoint, Revision: snap.Revision, Keys: []keyView{}}
 	if h.mcpEndpoint != "" {
 		// Shell-quote the configured URL without interpolating a credential.
 		v.Command = "codex mcp add my-gateway --url '" + strings.ReplaceAll(h.mcpEndpoint, "'", "'\"'\"'") + "' --bearer-token-env-var MCP_GATEWAY_TOKEN"

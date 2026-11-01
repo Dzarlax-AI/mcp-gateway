@@ -134,20 +134,61 @@ Protect the browser-facing `/gateway/admin` and `/gateway/admin/*` routes with a
 Cloudflare Access application and an explicit administrator access policy. Keep
 the origin and admin listener private so requests cannot bypass Access.
 
-The current deployment uses Cloudflare Access for browser sign-in while the
-gateway runs in its legacy `authentik` trusted-proxy mode. That mode is a
-compatibility contract for the gateway's expected identity headers; it does not
-by itself establish which identity provider authenticates users. Preserve the
-existing trusted proxy and identity-header configuration until a replacement is
-reviewed and verified. Do not switch an existing installation to token mode as
-a documentation-only change.
+The gateway supports three independent admin authentication modes:
 
-Cloudflare Access is an external access layer. It does not introduce a
-`cloudflare` value for `GATEWAY_ADMIN_AUTH_MODE` or replace the gateway's own
-admin authentication. For a token-based installation, keep
-`GATEWAY_ADMIN_AUTH_MODE=token` and a separate `GATEWAY_ADMIN_TOKEN`; the local
-SQLite example above uses this mode. Do not treat an unverified identity header
-as an authenticated administrator.
+- `token` (default): a separate `GATEWAY_ADMIN_TOKEN`, login form and local
+  session. This remains available for local installations and recovery on an
+  appropriately isolated listener. Access assertions do not authenticate this mode.
+- `cloudflare`: direct verification of signed Access application assertions on
+  every admin request, including assets, login and logout. No token fallback.
+- `authentik`: legacy trusted-proxy header compatibility. It is retained for
+  existing installations; it is not required for Cloudflare mode.
+
+For direct Access verification configure only these admin authentication settings
+alongside the HTTPS admin origin/listener and optional base path:
+
+```sh
+GATEWAY_ADMIN_AUTH_MODE=cloudflare
+GATEWAY_ADMIN_ACCESS_ISSUER=https://your-team.cloudflareaccess.com
+GATEWAY_ADMIN_ACCESS_AUD=your-admin-application-audience
+GATEWAY_ADMIN_ACCESS_ALLOWED_EMAILS=administrator@example.com
+```
+
+Use the exact Access application audience for the admin, independently of MCP
+OAuth. Emails are exact, case-sensitive matches; a comma-separated list permits
+multiple administrators. Duplicate or empty entries are rejected. Clear
+`GATEWAY_ADMIN_TOKEN`, `GATEWAY_ADMIN_TRUSTED_PROXY_CIDRS`,
+`GATEWAY_ADMIN_ALLOWED_USERS` and `GATEWAY_ADMIN_ALLOWED_GROUPS` in this mode.
+Incomplete or mixed mode configuration fails startup. The admin listener
+requires an HTTPS origin for Cloudflare mode.
+
+The gateway requires exactly one `Cf-Access-Jwt-Assertion` and verifies RS256,
+issuer, audience, application token type, expiry, issued-at time, subject and
+allowed email. Plain identity headers and native MCP credentials cannot replace
+it. JWKS is fetched from the configured issuer over verified HTTPS with redirects
+and HTTP proxies disabled. Keys are cached for five minutes; unknown key IDs may
+trigger a refresh after a ten-second fetch cooldown. Failed refreshes never
+extend the cache. An outage denies requests without a valid cached key.
+
+The local session and CSRF token bind to both signed subject and email, while
+assertion validation remains mandatory on every request. A changed identity
+cannot submit the previous identity's forms. The gateway does not perform online
+revocation checks for otherwise valid assertions.
+
+Sign out requires CSRF, removes the local session, and redirects to the fixed
+same-origin `/cdn-cgi/access/logout` endpoint (outside the gateway base path).
+Cloudflare handles this endpoint at the edge. Its
+[session management documentation](https://developers.cloudflare.com/cloudflare-one/access-controls/access-settings/session-management/)
+describes broader Access session revocation. The gateway does not guarantee
+immediate global logout or logout from the upstream identity provider; an
+existing identity-provider session may make a subsequent login automatic.
+Actual edge logout and re-entry must be verified for each deployment.
+
+Before switching an existing installation, verify its edge application, exact
+issuer/audience, forwarded assertion and private origin routing. Keep the old
+image and private configuration for a scoped rollback. No database migration or
+registry reset is needed. A rollback must restore a supported authentication
+mode and its matching configuration; do not leave the admin unauthenticated.
 
 Keep browser Access protection separate from native `/gateway/mcp` authentication:
 that endpoint accepts gateway Bearer or `X-API-Key` credentials. Optional

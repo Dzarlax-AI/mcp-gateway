@@ -30,7 +30,8 @@ type workspacePage struct {
 func (h *handler) renderWorkspace(w http.ResponseWriter, r *http.Request, snap store.Snapshot, csrf, user string) {
 	v := h.view(snap, csrf)
 	v.User = user
-	v.Authentik = h.a.forward != nil
+	v.Authentik = h.a.sso()
+	v.AuthProvider = h.a.provider()
 	p := workspacePage{page: v}
 	id := strings.TrimPrefix(r.URL.Path, "/admin/servers/")
 	if id == r.URL.Path || strings.Contains(id, "/") {

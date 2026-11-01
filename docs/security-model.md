@@ -13,6 +13,21 @@ The gateway is a privileged bridge to upstream tools. Restricted principals requ
 - Upstream schemas/content are untrusted. Arguments are schema-validated; external schema references are not loaded. Tool annotations do not expand access.
 - Requests, results and operation duration are bounded. Invocation has no automatic retries.
 
+## Direct Access administration
+
+Optional `GATEWAY_ADMIN_AUTH_MODE=cloudflare` uses a verifier and identity allowlist
+separate from MCP OAuth. Every request requires one signed application assertion;
+local cookies never replace signature/issuer/audience/time/email validation.
+Sessions and CSRF bind to subject and email. No token or legacy identity-header
+fallback exists. JWKS cache expiry fails closed on fetch failure; rotation uses a
+bounded refresh cooldown. An otherwise valid assertion is not checked against an
+online revocation endpoint. Native MCP key authentication is unchanged.
+
+Token mode retains its own login, rate limit, session and CSRF flow independently
+of SSO headers. Legacy trusted-proxy mode is retained for compatibility only.
+See [self-hosting](self-hosting.md#cloudflare-access) for settings, edge logout
+limits, migration and rollback requirements.
+
 ## Optional Access OAuth route
 
 The default-off `/mcp/oauth` route accepts signed Cloudflare Access application

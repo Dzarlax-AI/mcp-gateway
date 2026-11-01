@@ -193,3 +193,51 @@ func TestNewRejectsInvalidOptions(t *testing.T) {
 		}
 	}
 }
+
+func TestJWKSUnavailableDoesNotExtendCache(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
+	unavailable := false
+	body := jwksBody("key-a", &key.PublicKey)
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		status := 200
+		if unavailable {
+			status = 503
+		}
+		return &http.Response{StatusCode: status, Body: io.NopCloser(strings.NewReader(string(body)))}, nil
+	}), CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	opts := Options{Issuer: "https://issuer.example.org", Audience: "admin-aud", Users: map[string]string{"alice@example.net": "admin"}}
+	v, err := NewForTesting(opts, opts.Issuer+"/cdn-cgi/access/certs", client, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := sign(t, key, "key-a", opts.Issuer, []string{opts.Audience}, now.Add(-time.Minute), now.Add(time.Hour), "app")
+	unavailable = true
+	if _, err = v.Verify(context.Background(), token); err == nil {
+		t.Fatal("unavailable initial JWKS accepted")
+	}
+	unavailable = false
+	now = now.Add(11 * time.Second)
+	if _, err = v.Verify(context.Background(), token); err != nil {
+		t.Fatal("recovery failed", err)
+	}
+	unavailable = true
+	now = now.Add(time.Minute)
+	if _, err = v.Verify(context.Background(), token); err != nil {
+		t.Fatal("valid cached key rejected", err)
+	}
+	now = now.Add(cacheTTL)
+	for i := 0; i < 2; i++ {
+		if _, err = v.Verify(context.Background(), token); err == nil {
+			t.Fatal("expired key cache accepted during outage")
+		}
+	}
+	unavailable = false
+	now = now.Add(11 * time.Second)
+	if _, err = v.Verify(context.Background(), token); err != nil {
+		t.Fatal("expired cache recovery failed", err)
+	}
+}

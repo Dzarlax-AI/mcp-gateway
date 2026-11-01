@@ -273,7 +273,8 @@ func (h *handler) toolManagement(w http.ResponseWriter, r *http.Request, snap st
 
 func (h *handler) renderWorkspaceError(w http.ResponseWriter, r *http.Request, snap store.Snapshot, csrf, user, message string, code int) {
 	v := h.view(snap, csrf)
-	v.User, v.Authentik, v.Error = user, h.a.forward != nil, message
+	v.User, v.Authentik, v.Error = user, h.a.sso(), message
+	v.AuthProvider = h.a.provider()
 	v.Uncertain = code == 409 || code >= 500
 	v.Draft = map[string]string{}
 	for _, name := range []string{"id", "description", "keywords", "url", "auth_mode", "auth_header", "https_consent"} {

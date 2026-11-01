@@ -255,7 +255,7 @@ func adminOptions(origin string) admin.Options {
 		}
 		return nil
 	}
-	return admin.Options{Token: os.Getenv("GATEWAY_ADMIN_TOKEN"), Origin: origin, BasePath: os.Getenv("GATEWAY_ADMIN_BASE_PATH"), AuthMode: os.Getenv("GATEWAY_ADMIN_AUTH_MODE"), TrustedProxyCIDRs: list("GATEWAY_ADMIN_TRUSTED_PROXY_CIDRS"), AllowedUsers: list("GATEWAY_ADMIN_ALLOWED_USERS"), AllowedGroups: list("GATEWAY_ADMIN_ALLOWED_GROUPS")}
+	return admin.Options{AccessIssuer: os.Getenv("GATEWAY_ADMIN_ACCESS_ISSUER"), AccessAudience: os.Getenv("GATEWAY_ADMIN_ACCESS_AUD"), AccessEmails: list("GATEWAY_ADMIN_ACCESS_ALLOWED_EMAILS"), Token: os.Getenv("GATEWAY_ADMIN_TOKEN"), Origin: origin, BasePath: os.Getenv("GATEWAY_ADMIN_BASE_PATH"), AuthMode: os.Getenv("GATEWAY_ADMIN_AUTH_MODE"), TrustedProxyCIDRs: list("GATEWAY_ADMIN_TRUSTED_PROXY_CIDRS"), AllowedUsers: list("GATEWAY_ADMIN_ALLOWED_USERS"), AllowedGroups: list("GATEWAY_ADMIN_ALLOWED_GROUPS")}
 }
 
 // readBatchOptions validates the explicit opt-in without mutating registry data.
