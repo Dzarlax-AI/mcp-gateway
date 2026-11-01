@@ -33,5 +33,5 @@ and `memory/list_calendars`, then save the permissions. Server/tool switches are
 left at their synthetic defaults. Capture the server and client workspaces with
 keys hidden. Stop the fixture with Ctrl+C; its temporary database is removed.
 
-Only these three reviewed image paths are included in publication exports.
-Other local or operational captures are excluded.
+These three images are the README screenshots. No operational or production
+captures are included.

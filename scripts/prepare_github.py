@@ -11,11 +11,6 @@ import shutil
 ROOT = Path(__file__).resolve().parent.parent
 # Root instructions are authoritative. Historical docs/repository templates are
 # not inputs: mapping them onto root files would discard newer instructions.
-PUBLIC_IMAGES = {
-    'docs/screenshots/servers.jpg',
-    'docs/screenshots/clients.jpg',
-    'docs/screenshots/clients-mobile.jpg',
-}
 FILES = [
     'AGENTS.md', '.gitignore', 'README.md', 'Dockerfile', '.dockerignore',
     'go.mod', 'go.sum', 'CONTRIBUTING.md', 'SECURITY.md', 'CLAUDE.md',
@@ -24,7 +19,6 @@ FILES = [
     'config/read-batch.example.json', 'config/claude-mcp.json.example',
     'docs/self-hosting.md', 'docs/development.md', 'docs/security-model.md',
     'docs/claude.md', 'docs/deployment/connector-batch-reading.md',
-    'docs/deployment/classified-batch.md', 'docs/screenshots/README.md',
     'docs/deployment/agent-acl.md', 'docs/deployment/secret-rotation.md', 'docs/deployment/chatgpt-oauth.md',
     'examples/deployment/docker-compose.mcp-oauth.yml',
     'internal/readpolicy/contracts/README.md',
@@ -58,7 +52,7 @@ def export(root, output):
     output = requested.resolve()
     if output == root or root in output.parents or output in root.parents:
         raise ExportError('output must be outside the working tree and its ancestors')
-    files = list(FILES) + sorted(PUBLIC_IMAGES)
+    files = list(FILES)
     files += [p.relative_to(root).as_posix() for directory in ('cmd', 'internal')
               for p in (root / directory).rglob('*')
               if (p.is_file() or p.is_symlink()) and p.suffix in ('.go', '.js')]
@@ -73,17 +67,10 @@ def export(root, output):
         if any(p.is_symlink() for p in parts) or not source.is_file():
             raise ExportError('invalid publication input: ' + name)
         data = source.read_bytes()
-        if name in PUBLIC_IMAGES:
-            if not data.startswith(b'\xff\xd8\xff') or not data.endswith(b'\xff\xd9'):
-                raise ExportError('invalid reviewed JPEG: ' + name)
-            # Only exact reviewed screenshot paths are binary inputs. Retain the
-            # textual private-path/key check for image metadata as well.
-            text = data.decode('latin-1')
-        else:
-            try:
-                text = data.decode('utf-8')
-            except UnicodeDecodeError:
-                raise ExportError('non-UTF-8 publication input: ' + name) from None
+        try:
+            text = data.decode('utf-8')
+        except UnicodeDecodeError:
+            raise ExportError('non-UTF-8 publication input: ' + name) from None
         if PRIVATE.search(text):
             raise ExportError('private deployment detail found in: ' + name)
         contents[name] = data
