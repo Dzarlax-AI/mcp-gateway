@@ -4,7 +4,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"html/template"
 	"mcp-gateway/internal/audit"
 	"mcp-gateway/internal/config"
 	"mcp-gateway/internal/policy"
@@ -19,7 +18,12 @@ type permissionRow struct {
 	Server, Tool, Field, Constraints string
 	Selected, Enabled, Allowed       bool
 }
+type permissionGroup struct {
+	Server string
+	Rows   []permissionRow
+}
 type permissionView struct {
+	Groups                                        []permissionGroup
 	Base, CSRF, Principal, Policy, Audit, Message string
 	Revision                                      int64
 	Legacy                                        bool
@@ -80,7 +84,23 @@ func (h *handler) permissions(w http.ResponseWriter, r *http.Request, snap store
 	render := func(status int) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(status)
-		_ = permissionTpl.Execute(w, v)
+		v.Groups = nil
+		for _, row := range v.Rows {
+			if len(v.Groups) == 0 || v.Groups[len(v.Groups)-1].Server != row.Server {
+				v.Groups = append(v.Groups, permissionGroup{Server: row.Server})
+			}
+			i := len(v.Groups) - 1
+			v.Groups[i].Rows = append(v.Groups[i].Rows, row)
+		}
+		cv := h.connectionView(snap, sess, user)
+		for i := range cv.Keys {
+			if cv.Keys[i].ID == id {
+				cv.Selected = &cv.Keys[i]
+				break
+			}
+		}
+		cv.Permission = &v
+		_ = h.connectionTpl.Execute(w, cv)
 	}
 	if r.Method == "GET" {
 		render(200)
@@ -228,5 +248,3 @@ func (h *handler) auditMutation(w http.ResponseWriter, before, after store.Snaps
 	}
 	w.Header().Set("X-Gateway-Audit-Status", h.audit.State())
 }
-
-var permissionTpl = template.Must(template.New("permissions").Parse(permissionTemplate))

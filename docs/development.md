@@ -61,3 +61,11 @@ reviewable Compose example are in [the OAuth guide](deployment/chatgpt-oauth.md)
 Registry document v2 requires explicit per-principal policy and exact tool ACL. New keys start restricted with no access. OAuth and native credentials resolve to the same policy evaluator. Existing installations require a reviewed explicit migration; see the [ACL runbook](deployment/agent-acl.md). Local audit is opt-in and has explicit degraded status.
 
 The classified workspace can be previewed with `go run scripts/admin_workspace_fixture.go`. This creates only synthetic SQLite/loopback upstream data. See [classified batches](deployment/classified-batch.md) for the opt-in policy and compatibility boundaries.
+
+### Client workspace
+
+Connection uses a client rail and a shared setup panel on both the overview and existing permission-detail routes. The Codex command and both Claude Code JSON examples still come from `connectionView`; credentials are never interpolated into them. Native disclosures keep setup instructions in place.
+
+Client permissions are grouped by MCP server. Group selection and Allow/Deny visible affect the draft only; filtering preserves hidden checked grants. One existing permissions POST/CAS saves the exact mixed-server ACL. Shared clients require an explicit Restricted policy selection before editing exact grants. Group controls are progressive enhancement; without JavaScript, individual grant forms still work. For a shared client without JavaScript, save Restricted first, then select tools and save again.
+
+The permission and key scripts coordinate pending/uncertain states. Dirty permissions block key actions; navigation uses the browser's unsaved-change guard. Successful permission saves update key-form revisions, while confirmed key creation/deletion reloads the selected client's server-rendered metadata. Unknown writes are never automatically retried. Synthetic coverage includes hidden grants, serializing selected grants before disabling controls, partial groups, mixed-server CAS and both setup guides on detail pages.
