@@ -26,6 +26,10 @@ class PublicationExportTests(unittest.TestCase):
             path = self.root / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text('synthetic publication fixture\n')
+        for name in publication.PUBLIC_IMAGES:
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b'\xff\xd8\xffsynthetic image fixture\xff\xd9')
         shutil.copy2(SCRIPT, self.root / 'scripts/prepare_github.py')
         self.write('cmd/server/main.go', 'package main\n')
         self.write('internal/widget/view.js', '// synthetic runtime asset\n')
@@ -42,11 +46,12 @@ class PublicationExportTests(unittest.TestCase):
         for name in ('.env', 'config/local.json', '.git/config',
                      'docs/local/operator.md', 'docs/verification/private.json',
                      'docs/ai-plans/private.html', 'deploy/mcp-gateway/runtime.private.json',
-                     'scripts/unreviewed.py', 'internal/widget/local.token'):
+                     'scripts/unreviewed.py', 'internal/widget/local.token',
+                     'docs/screenshots/unreviewed.jpg'):
             self.write(name, 'synthetic private sentinel\n')
         count = publication.export(self.root, self.output)
         manifest = json.loads((self.output / 'PUBLICATION.json').read_text())
-        expected = set(publication.FILES) | {'cmd/server/main.go', 'internal/widget/view.js'}
+        expected = set(publication.FILES) | publication.PUBLIC_IMAGES | {'cmd/server/main.go', 'internal/widget/view.js'}
         self.assertEqual(set(manifest['files_sha256']), expected)
         self.assertEqual(count, len(expected))
         self.assertEqual((self.output / 'AGENTS.md').read_bytes(),
@@ -108,6 +113,17 @@ class PublicationExportTests(unittest.TestCase):
         for data in bad_inputs:
             with self.subTest(data_type=type(data).__name__):
                 (self.root / 'README.md').write_bytes(data)
+                with self.assertRaises(publication.ExportError):
+                    publication.export(self.root, self.output)
+                self.assertFalse(self.output.exists())
+
+    def test_reviewed_images_reject_wrong_format_and_private_metadata(self):
+        path = self.root / 'docs/screenshots/servers.jpg'
+        private_metadata = ('/' + 'Users/' + 'fixture/Projects/private').encode()
+        bad = [b'not a JPEG', b'\xff\xd8\xff' + private_metadata + b'\xff\xd9']
+        for data in bad:
+            with self.subTest(data=data):
+                path.write_bytes(data)
                 with self.assertRaises(publication.ExportError):
                     publication.export(self.root, self.output)
                 self.assertFalse(self.output.exists())
