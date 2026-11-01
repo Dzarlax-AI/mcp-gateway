@@ -231,3 +231,7 @@ Tests use synthetic credentials and local listeners. PostgreSQL contract tests
 require separate disposable databases. See [development](docs/development.md)
 for test settings, CI and repository conventions, and
 [contributing](CONTRIBUTING.md) for contribution guidance.
+
+## License
+
+[MIT](LICENSE) © 2026 Alexey Panfilov.
