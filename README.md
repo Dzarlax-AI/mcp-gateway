@@ -1,63 +1,34 @@
 # MCP Gateway
 
-A self-hosted gateway for using multiple MCP servers from Codex, Claude Code and other Streamable HTTP clients through one connection.
+A Go service that routes Streamable HTTP tool calls to configured MCP servers.
+It stores upstream connection settings and checks client permissions before
+forwarding each call.
 
-## Why this exists
+The web admin manages servers, tool switches and client keys. Tools can be
+selected in groups for enablement or Read/Write classification. Each client has
+its own tool permissions, grouped by MCP server. New keys have no tool access.
+SQLite and PostgreSQL store the registry and encrypted credentials.
 
-As your collection of MCP servers grows, each AI client needs its own list of
-endpoints, credentials and available tools. Adding a server or changing its
-credentials means updating those connections across applications. Exposing
-every upstream tool directly also gives the client a larger catalog to work
-through, even when a task needs only one service.
+## Screenshots
 
-MCP Gateway moves those connections into one place. Register your servers once,
-keep their credentials at the gateway, and connect each application to a single
-MCP endpoint with its own client key. You can then add servers, rotate upstream
-credentials or disable tools centrally, without editing each client's upstream
-configuration.
+Captured from a local fixture using synthetic servers, tools and clients.
+All endpoints are loopback; keys are hidden.
+[Capture setup](docs/screenshots/README.md).
 
-By default, the client sees four gateway tools instead of the full upstream
-catalog. It discovers a server, lists that server's tools, loads the schema it
-needs, and invokes the selected tool. This lets an agent explore capabilities
-as the task requires them, rather than receiving every upstream tool definition
-at once. An explicit `GATEWAY_TOOL_SEARCH_ENABLED=true` opt-in adds
-`search_tools`, which returns matching tools with their schemas. It also enables
-a shared in-memory catalog cache with a 60-second TTL for metadata and invoke
-paths. A successful admin connection check publishes its verified catalog after
-the registry update commits. Tool switches use current policy and do not extend
-the catalog TTL.
+Servers and tool selection:
 
-The project is inspired by [Uber's MCP Gateway](https://www.uber.com/re/en/blog/designing-mcp-gateway/)
-and built for running your own collection of MCP services.
+![Synthetic server workspace](docs/screenshots/servers.jpg)
 
-## How you use it
+Client permissions:
 
-For example, you might have separate MCP servers for documentation, a calendar
-and a personal knowledge base. Add them in the web admin, configure their
-authentication, and enable the tools you want to expose. Connect Codex and
-Claude Code to the gateway using a separate key for each application.
+![Synthetic client workspace](docs/screenshots/clients.jpg)
 
-When you ask an agent to search documentation, it can discover the documentation
-server and retrieve the search tool's schema before calling it. A later task
-can discover a different server through the same connection. The gateway routes
-the invocation to the saved endpoint and returns the upstream MCP result.
+<details>
+<summary>Mobile client permissions</summary>
 
-The admin gives you one place to manage this catalog and its credentials. A
-server or tool switch controls availability across clients. Separate client
-keys let you revoke one application's connection while keeping the others.
-Each principal has an exact tool ACL. New keys start without tool access;
-existing migrated principals retain explicit legacy compatibility until restricted.
+<img src="docs/screenshots/clients-mobile.jpg" width="375" alt="Synthetic client permissions on a mobile viewport">
 
-## What is supported
-
-- Streamable HTTP upstreams with explicit HTTPS endpoint consent.
-- A web admin for registering servers and enabling individual tools.
-- Separate client keys, with Bearer or `X-API-Key` authentication.
-- Upstream Bearer or custom credential headers, including `X-API-Key`.
-- Encrypted credential storage with SQLite for a standalone installation or
-  PostgreSQL for an existing infrastructure database.
-- Administrator sign-in through a separate token or a trusted Authentik proxy.
-- Input schema validation and preservation of upstream MCP result types.
+</details>
 
 ## Try the synthetic demo
 
