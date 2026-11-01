@@ -1,19 +1,41 @@
 # MCP Gateway
 
-A Go service that routes Streamable HTTP tool calls to configured MCP servers.
-It stores upstream connection settings and checks client permissions before
-forwarding each call.
+MCP Gateway is a self-hosted Go service that connects Codex, Claude Code and
+other Streamable HTTP clients to multiple MCP servers through one endpoint.
 
-The web admin manages servers, tool switches and client keys. Tools can be
-selected in groups for enablement or Read/Write classification. Each client has
-its own tool permissions, grouped by MCP server. New keys have no tool access.
-SQLite and PostgreSQL store the registry and encrypted credentials.
+## What it is for
+
+Without a gateway, each client needs its own upstream addresses and credentials.
+This service keeps those settings in one registry. Applications connect with
+separate client keys; adding a server or changing its credentials happens at the
+gateway. Each client has an exact list of tools it may use, bounded by global
+server and tool switches.
+
+The client receives four gateway tools by default: server discovery, tool
+listing, schema lookup and invocation. It can find an upstream tool and load its
+schema when needed instead of receiving every upstream definition at startup.
+Optional search returns matching tools with their schemas. Optional read batches
+run independent permitted reads in one gateway request.
+
+## Administration
+
+The **Servers** workspace manages upstream addresses, authentication, connection
+checks and global tool availability. It supports selecting tools in groups to
+enable, disable or classify them as Read, Write or Automatic.
+
+The **Connection** workspace manages client keys and permissions. Tools are
+grouped by MCP server, so an operator can select a server's current tools or a
+subset across several servers and save the selection together. New keys start
+without tool access. The page also contains connection instructions for Codex
+and Claude Code.
+
+SQLite or PostgreSQL stores the registry and encrypted credentials. Clients use
+Bearer or `X-API-Key` authentication; upstream credentials stay at the gateway.
 
 ## Screenshots
 
 Captured from a local fixture using synthetic servers, tools and clients.
 All endpoints are loopback; keys are hidden.
-[Capture setup](docs/screenshots/README.md).
 
 Servers and tool selection:
 
@@ -30,39 +52,13 @@ Client permissions:
 
 </details>
 
-## Try the synthetic demo
-
-Requires Go 1.26.4 or newer. No external services or real data are needed.
-
-```sh
-cp config/example.json config/local.json
-```
-
-Set these **synthetic demo-only** values in each of three terminals:
-
-```sh
-export GATEWAY_DEMO_TOKEN='synthetic-local-client-token'
-export DEMO_UPSTREAM_TOKEN='synthetic-local-upstream-token'
-```
-
-Then run one command per terminal:
-
-```sh
-# Terminal 1: synthetic upstream on 127.0.0.1:8081
-go run ./cmd/demo -mode server
-# Terminal 2: gateway on 127.0.0.1:8080
-go run ./cmd/mcp-gateway
-# Terminal 3: discovery, tool listing, schema and echo invocation
-go run ./cmd/demo -mode client
-```
-
-The gateway endpoint is `http://127.0.0.1:8080/mcp`; health is `/healthz`. Stop the processes with Ctrl+C. File mode has no web admin. The demo config uses legacy argument grants; servers added through the admin use shared enablement instead.
-
 ## Run the web admin
 
-See [self-hosting](docs/self-hosting.md) for SQLite setup, PostgreSQL roles, HTTPS routing and Authentik trust requirements. A new installation explicitly migrates and imports an empty bootstrap registry before starting the gateway. Startup never applies migrations automatically.
+See [self-hosting](docs/self-hosting.md) for SQLite setup, PostgreSQL roles and HTTPS routing. A new installation explicitly migrates and imports an empty bootstrap registry before starting the gateway. Startup never applies migrations automatically.
 
 In the admin, add an upstream, consent to its exact HTTPS endpoint, choose its authentication header, and run the connection check. That check only initializes MCP and lists tools. Enable the server and the tools you want clients to use. New additions default to disabled.
+
+Cloudflare Access protects browser access to the deployed admin. The gateway uses a trusted-proxy compatibility mode behind it; see [self-hosting](docs/self-hosting.md#cloudflare-access). This is separate from the optional MCP Managed OAuth route described below; native MCP clients authenticate with their gateway keys.
 
 The **Connection** page displays the configured MCP URL and lets you create a separate key for each application. Keys are hidden until Show or Copy is pressed. Existing environment-managed keys are preserved and cannot be revealed or deleted there.
 

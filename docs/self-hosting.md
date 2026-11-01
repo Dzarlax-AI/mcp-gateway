@@ -128,13 +128,34 @@ require an initial client refresh; changing the allowlist is read on subsequent
 admissions. Generic `invoke_tool` remains capable of writes and is not marked
 read-only. Disabling the batch flag restores the five-tool search interface.
 
-## Authentik
+## Cloudflare Access
 
-Set `GATEWAY_ADMIN_AUTH_MODE=authentik`, clear `GATEWAY_ADMIN_TOKEN`, and configure at least one of `GATEWAY_ADMIN_ALLOWED_USERS` or `GATEWAY_ADMIN_ALLOWED_GROUPS`. Configure `GATEWAY_ADMIN_TRUSTED_PROXY_CIDRS` with exact immediate proxy peers (`/32` or `/128`).
+Protect the browser-facing `/gateway/admin` and `/gateway/admin/*` routes with a
+Cloudflare Access application and an explicit administrator access policy. Keep
+the origin and admin listener private so requests cannot bypass Access.
 
-Only a trusted, isolated proxy may supply `X-authentik-username` and `X-authentik-groups`. Strip incoming identity headers, run Authentik forward auth, then attach its response headers. Group values use pipe separators. Ensure clients and other containers cannot reach the admin listener from a trusted peer address. Forwarded client addresses do not grant trust.
+The current deployment uses Cloudflare Access for browser sign-in while the
+gateway runs in its legacy `authentik` trusted-proxy mode. That mode is a
+compatibility contract for the gateway's expected identity headers; it does not
+by itself establish which identity provider authenticates users. Preserve the
+existing trusted proxy and identity-header configuration until a replacement is
+reviewed and verified. Do not switch an existing installation to token mode as
+a documentation-only change.
 
-Protect only admin routes with SSO; the MCP route uses its own Bearer/X-API-Key authentication. Configure Authentik's callback/sign-out routes for your host. Verify real login, callback and an AJAX action after the session has aged; a healthy gateway alone does not prove SSO works.
+Cloudflare Access is an external access layer. It does not introduce a
+`cloudflare` value for `GATEWAY_ADMIN_AUTH_MODE` or replace the gateway's own
+admin authentication. For a token-based installation, keep
+`GATEWAY_ADMIN_AUTH_MODE=token` and a separate `GATEWAY_ADMIN_TOKEN`; the local
+SQLite example above uses this mode. Do not treat an unverified identity header
+as an authenticated administrator.
+
+Keep browser Access protection separate from native `/gateway/mcp` authentication:
+that endpoint accepts gateway Bearer or `X-API-Key` credentials. Optional
+Cloudflare Managed OAuth uses a separate MCP route and gateway configuration;
+see [MCP OAuth setup](deployment/chatgpt-oauth.md).
+
+Verify browser login, an authenticated admin action, and native MCP connectivity
+after changing access rules. Service health alone does not verify authentication.
 
 ## Agent permissions
 

@@ -1,37 +1,28 @@
-# Synthetic screenshots
+# README screenshot fixture
 
-These are browser captures of the local `scripts/admin_workspace_fixture.go`
-fixture, built from commit `41548a7` and captured on 2026-11-01. The fixture uses
-a new temporary SQLite database, fixed demo credentials and loopback MCP handlers.
-It does not connect to production services or read personal data.
+Captured on 2026-11-01 from `scripts/readme_fixture.go`, using a new temporary
+SQLite database and local mock MCP handlers. This fixture does not load an
+existing registry or connect to external services.
 
-- `servers.jpg`: synthetic Calendar connector, operation groups and selection.
-- `clients.jpg`: synthetic client and permissions grouped by MCP server.
-- `clients-mobile.jpg`: the same client layout at a 390 × 844 CSS viewport.
+All server identifiers are fictional: `demo-inventory`, `demo-library`,
+`demo-recipes`, `demo-weather`, and `demo-workshop`. Client names are
+`Demo desktop`, `Demo terminal`, and the environment-managed `demo-cli`.
+Tools such as `list_items` and `get_stock` are mock operations returning
+`{"synthetic":true}`. All URLs are loopback addresses. No key was revealed.
 
-The endpoint and upstream ports are assigned by the fixture. Client names are
-`Demo phone` and `Demo laptop`; the `client` principal is a synthetic
-environment-managed example. No key was revealed during capture. The images do
-not include browser chrome, production domains or production account names.
-They are direct screenshots, without compositing or replacement text.
-The desktop client image is a full-page capture. Image sizes are 1265 × 712
-(servers), 1265 × 1391 (clients), and 375 × 1940 (mobile full page).
-
-## Reproduce
-
-From the repository root:
+Run from the repository root:
 
 ```sh
-go run scripts/admin_workspace_fixture.go
+go run scripts/readme_fixture.go
 ```
 
-Open the printed `admin_origin`. Sign in using the synthetic administrator token
-defined in the fixture source. Use these credentials only for this local demo.
+Open the printed `admin_origin` and sign in with the demo administrator token
+defined in the fixture source. Create the two demo clients. For `Demo desktop`,
+allow `get_item`, `get_stock`, and `list_items` on `demo-inventory`, then save.
+Collapse the tool group for the client captures. On the server page, select the
+Read group without changing the switches.
 
-Create the two demo clients. For `Demo phone`, select the six Calendar read tools
-and `memory/list_calendars`, then save the permissions. Server/tool switches are
-left at their synthetic defaults. Capture the server and client workspaces with
-keys hidden. Stop the fixture with Ctrl+C; its temporary database is removed.
-
-These three images are the README screenshots. No operational or production
-captures are included.
+`servers.jpg` is a desktop viewport capture; `clients.jpg` is a desktop full-page
+capture; `clients-mobile.jpg` is a full-page capture at a 390 × 844 CSS viewport.
+These are direct browser screenshots without replacement text or compositing.
+Stop the fixture with Ctrl+C to remove its temporary database.
